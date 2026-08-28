@@ -22,35 +22,44 @@
     .table-container { max-height: calc(100vh - 280px); overflow-y: auto; }
     th { position: sticky; top: 0; z-index: 10; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
     @media print { body { background: white !important; } .no-print { display: none !important; } #printable-mom { display: block !important; width: 100% !important; } @page { size: A4 landscape; margin: 10mm; } }
+    
+    /* SVG Chart Styles */
+    .bar-grow { transform-origin: bottom; animation: barGrow 1s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    @keyframes barGrow { from { transform: scaleY(0); } to { transform: scaleY(1); } }
   </style>
 </head>
 <body class="text-slate-800">
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useMemo } = React;
     
     // ========================================================
     // PASTE YOUR DEPLOYED APPS SCRIPT WEB APP URL HERE:
     // ========================================================
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxSRgroaYX3VUbG6weWVcqOrjzyIiEIf3_0pq8aySc5drXArn-KcF9YopTbHNNexmIOAw/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwbnQoTKCNARcVkfdAmeYtYDoDMiIdrx9jpzXVBPRDUgAmAYEpgUZznge8WENueeRCs/exec";
 
     const apiPost = async (payload) => {
       const res = await fetch(SCRIPT_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
       return res.json();
     };
 
-    const Donut = ({ pct, color, label, sub }) => {
-      const c = 2 * Math.PI * 34;
-      const off = c - (Math.min(100, Math.max(0, pct)) / 100) * c;
+    const TrendChart = ({ data, title }) => {
+      if (!data || data.length === 0) return <div class="h-40 flex items-center justify-center text-xs font-bold text-slate-400">No historical data available.</div>;
+      const maxVal = Math.max(...data.map(d => d.value)) || 1;
+      
       return (
-        <div class="flex flex-col items-center">
-          <div class="relative w-24 h-24 flex items-center justify-center">
-            <svg class="transform -rotate-90 w-full h-full"><circle cx="48" cy="48" r="34" stroke="currentColor" strokeWidth="7" fill="transparent" class="text-slate-100" /><circle cx="48" cy="48" r="34" stroke="currentColor" strokeWidth="7" fill="transparent" strokeDasharray={c} strokeDashoffset={off} class={`transition-all duration-700 ${color}`} strokeLinecap="round" /></svg>
-            <div class="absolute text-center"><span class="text-lg font-extrabold text-slate-800">{pct}%</span></div>
-          </div>
-          <span class="text-[11px] font-bold text-slate-600 uppercase tracking-wider mt-1">{label}</span>
-          <span class="text-[10px] text-slate-400 font-semibold">{sub}</span>
+        <div class="h-48 flex items-end gap-3 pt-4 border-b border-slate-200">
+          {data.map((d, i) => {
+            const hPct = Math.max(10, (d.value / maxVal) * 100);
+            return (
+              <div key={i} class="flex flex-col items-center flex-1 group">
+                <span class="text-[9px] font-bold text-slate-500 mb-2 opacity-0 group-hover:opacity-100 transition-opacity">{d.value}</span>
+                <div class="w-full bg-ntpc-blue/90 rounded-t-sm bar-grow hover:bg-ntpc-orange transition-colors" style={{ height: `${hPct}%` }}></div>
+                <span class="text-[9px] font-black text-ntpc-blue mt-2">Wk {d.week}</span>
+              </div>
+            );
+          })}
         </div>
       );
     };
@@ -58,22 +67,26 @@
     function App() {
       const [authState, setAuthState] = useState("LOGIN");
       const [loginForm, setLoginForm] = useState({ userId: "", password: "" });
-      const [authMsg, setAuthMsg] = useState("");
       
       const [tab, setTab] = useState("DASHBOARD");
-      const [role, setRole] = useState("");
+      const [role, setRole] = useState("NTPC");
       const [weekNo, setWeekNo] = useState(35);
       const [availableWeeks, setAvailableWeeks] = useState([35]);
       const [isLocked, setIsLocked] = useState(false);
       const [activeDiscipline, setActiveDiscipline] = useState("Civil_Execution");
+      const [activeChartTask, setActiveChartTask] = useState("Excavation");
       
       const [loading, setLoading] = useState(false);
       const [statusMsg, setStatusMsg] = useState("");
       const [attendees, setAttendees] = useState({ ntpc: "", tpl: "" });
 
+      // Core Data States
+      const [l2Schedule, setL2Schedule] = useState([]);
       const [civilTasks, setCivilTasks] = useState([]);
       const [mechTasks, setMechTasks] = useState([]);
       const [elecTasks, setElecTasks] = useState([]);
+      const [civilHistory, setCivilHistory] = useState([]);
+      
       const [drawings, setDrawings] = useState([]);
       const [safetyLogs, setSafetyLogs] = useState([]);
       const [qualityLogs, setQualityLogs] = useState([]);
@@ -81,44 +94,34 @@
 
       const [showLogModal, setShowLogModal] = useState(false);
       const [showWeekModal, setShowWeekModal] = useState(false);
-      const [viewImage, setViewImage] = useState(null); // Image Lightbox State
+      const [viewImage, setViewImage] = useState(null); 
       const [newWeekInput, setNewWeekInput] = useState(36);
       const [logForm, setLogForm] = useState({ type: "Safety", category: "", desc: "", file: null });
 
-      // SESSION PERSISTENCE
+      const presetTasks = ["Excavation", "PCC", "RCC", "Backfilling", "Brickwork", "Plastering", "Painting", "Drain PCC", "Drain RCC", "Drain Wall"];
+
       useEffect(() => {
         const savedRole = localStorage.getItem("wrm_role");
         const savedUser = localStorage.getItem("wrm_userId");
-        if (savedRole && savedUser) {
-          setRole(savedRole);
-          setLoginForm({ userId: savedUser, password: "" });
-          setAuthState("PORTAL");
-        }
+        if (savedRole && savedUser) { setRole(savedRole); setAuthState("PORTAL"); }
       }, []);
 
       const handleLogin = async () => {
-        setLoading(true); setAuthMsg("Verifying...");
+        setLoading(true); setStatusMsg("Verifying...");
         try {
           const res = await apiPost({ action: "LOGIN", userId: loginForm.userId, password: loginForm.password });
           if (res.status === 200) { 
-            setRole(res.role); 
-            localStorage.setItem("wrm_role", res.role);
-            localStorage.setItem("wrm_userId", loginForm.userId);
-            setAuthState("PORTAL"); 
-          } else setAuthMsg(res.error);
-        } catch (e) { setAuthMsg("Network error."); }
+            setRole(res.role); localStorage.setItem("wrm_role", res.role); localStorage.setItem("wrm_userId", loginForm.userId); setAuthState("PORTAL"); 
+          } else alert(res.error);
+        } catch (e) { alert("Network error."); }
         setLoading(false);
       };
 
-      const handleLogout = () => {
-        localStorage.removeItem("wrm_role");
-        localStorage.removeItem("wrm_userId");
-        setAuthState("LOGIN");
-      };
+      const handleLogout = () => { localStorage.clear(); setAuthState("LOGIN"); };
 
       const loadData = async () => {
         if (authState !== "PORTAL") return;
-        setLoading(true); setStatusMsg("Syncing data...");
+        setLoading(true); setStatusMsg("Syncing...");
         try {
           const res = await fetch(`${SCRIPT_URL}?week=${weekNo}`);
           const data = await res.json();
@@ -127,10 +130,13 @@
             setAttendees({ ntpc: data.weekMeta.ntpc, tpl: data.weekMeta.tpl });
             if (data.allWeeks?.length) setAvailableWeeks(data.allWeeks);
             
-            const tMap = (r) => ({ id: r.Task_ID || "", desc: r.Description, unit: r.Unit || "m³", plan: r.Wk_Plan || 0, act: r.Wk_Act || 0, next: r.Next_Plan || 0, cumBacklog: r.Cum_Backlog || 0, tplRemarks: r.TPL_Remarks || "", ntpcDirectives: r.NTPC_Directives || "", milestone: r.Milestone_Status || "None" });
-            setCivilTasks((data.civilData || []).filter(r => r.Description).map(tMap));
-            setMechTasks((data.mechData || []).filter(r => r.Description).map(tMap));
-            setElecTasks((data.elecData || []).filter(r => r.Description).map(tMap));
+            setL2Schedule((data.l2Data || []).filter(r => r.Work_Description).map(r => ({ id: r.L2_ID || "", discipline: r.Discipline || "Civil", desc: r.Work_Description, l2Start: r.L2_Start || "", actStart: r.Act_Start || "", l2End: r.L2_End || "", actEnd: r.Act_End || "" })));
+            
+            const tMap = (r) => ({ id: r.Task_ID || "", l2Ref: r.L2_Reference || "", taskName: r.Task_Name || "", unit: r.Unit || "m³", plan: r.Wk_Plan || 0, act: r.Wk_Act || 0, next: r.Next_Plan || 0, cumBacklog: r.Cum_Backlog || 0, tplRemarks: r.TPL_Remarks || "", ntpcDirectives: r.NTPC_Directives || "", milestone: r.Milestone_Status || "None" });
+            setCivilTasks((data.civilData || []).filter(r => r.L2_Reference || r.Task_Name).map(tMap));
+            setMechTasks((data.mechData || []).filter(r => r.L2_Reference || r.Task_Name).map(tMap));
+            setElecTasks((data.elecData || []).filter(r => r.L2_Reference || r.Task_Name).map(tMap));
+            setCivilHistory((data.civilHistory || []).filter(r => r.Task_Name));
             
             setDrawings((data.drawingData || []).filter(r => r.Drawing_No).map(r => ({ id: r.Dwg_ID || "", discipline: r.Discipline || "Civil", drawingNo: r.Drawing_No, desc: r.Description, targetDate: r.Target_Date || "", expectedDate: r.Expected_Date || "", status: r.Status || "Pending", frontImpact: r.Front_Impact || "", remarks: r.Remarks || "" })));
             setSafetyLogs((data.safetyData || []).filter(s => s.Description).map(s => ({ id: s.Log_ID, weekNo: s.Week_No, category: s.Category, desc: s.Description, status: s.Status, photoUrl: s.Photo_URL || "" })));
@@ -139,7 +145,7 @@
             
             setStatusMsg("Live Connected");
           }
-        } catch (e) { setStatusMsg("Offline Demo Mode"); }
+        } catch (e) { setStatusMsg("Offline / Demo Mode"); }
         setLoading(false);
       };
 
@@ -160,9 +166,7 @@
       const toggleLogStatus = async (sheetName, logId, currentStatus) => {
         if (role !== "NTPC") return alert("Only NTPC can mark items as Complied/Cleared.");
         const newStatus = currentStatus === "Open" || currentStatus === "Pending" ? (sheetName.includes("Hindrance")||sheetName.includes("Action") ? "Completed" : "Complied") : (sheetName.includes("Hindrance")||sheetName.includes("Action") ? "Pending" : "Open");
-        
-        setLoading(true);
-        setStatusMsg("Updating status...");
+        setLoading(true); setStatusMsg("Updating status...");
         await apiPost({ action: "UPDATE_LOG_STATUS", role, sheetName, logId, status: newStatus });
         loadData();
       };
@@ -182,10 +186,18 @@
 
       const isTplDisabled = role === "TPL" && isLocked;
 
-      // Stats Logic
-      const allMilestones = [...civilTasks, ...mechTasks, ...elecTasks].filter(t => t.milestone !== "None");
-      const safePct = safetyLogs.length ? Math.round((safetyLogs.filter(s => s.status === "Complied" || s.status === "Closed").length / safetyLogs.length) * 100) : 100;
-      const qualPct = qualityLogs.length ? Math.round((qualityLogs.filter(q => q.status === "Complied" || q.status === "Closed").length / qualityLogs.length) * 100) : 100;
+      // Render Historical Chart Data based on activeChartTask
+      const chartData = useMemo(() => {
+        const hist = civilHistory.filter(r => (r.Task_Name || "").toLowerCase() === activeChartTask.toLowerCase());
+        const aggregated = {};
+        hist.forEach(r => {
+          if (!aggregated[r.Week_No]) aggregated[r.Week_No] = 0;
+          aggregated[r.Week_No] += (parseFloat(r.Wk_Act) || 0);
+        });
+        return Object.keys(aggregated).sort((a,b) => parseInt(a)-parseInt(b)).map(w => ({ week: w, value: aggregated[w] }));
+      }, [civilHistory, activeChartTask]);
+
+      const globalProgress = currentTasks.length > 0 ? Math.round((currentTasks.reduce((acc, t) => acc + (parseFloat(t.act)||0), 0) / (currentTasks.reduce((acc, t) => acc + (parseFloat(t.plan)||0), 0) || 1)) * 100) : 0;
 
       if (authState === "LOGIN") {
         return (
@@ -194,10 +206,9 @@
               <div class="w-16 h-16 bg-ntpc-orange rounded-2xl flex items-center justify-center font-black text-3xl text-white mx-auto shadow-lg mb-6">N</div>
               <h1 class="text-xl font-black text-ntpc-blue uppercase tracking-widest">NTPC Nabinagar</h1>
               <p class="text-xs text-slate-400 font-bold mb-8 uppercase tracking-widest mt-1">Review Portal</p>
-              <input type="text" value={loginForm.userId} onChange={e=>setLoginForm({...loginForm, userId: e.target.value})} class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none focus:border-ntpc-orange mb-4" placeholder="User ID (e.g. NTPC_ADMIN)" />
+              <input type="text" value={loginForm.userId} onChange={e=>setLoginForm({...loginForm, userId: e.target.value})} class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none focus:border-ntpc-orange mb-4" placeholder="User ID" />
               <input type="password" value={loginForm.password} onChange={e=>setLoginForm({...loginForm, password: e.target.value})} class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-bold outline-none focus:border-ntpc-orange" placeholder="Password" />
-              <div class="text-[11px] font-bold text-red-500 mt-2 h-4">{authMsg}</div>
-              <button onClick={handleLogin} disabled={loading} class="w-full mt-4 bg-ntpc-blue hover:bg-blue-900 text-white p-3.5 rounded-xl text-xs font-black tracking-widest uppercase shadow-md transition-all">Secure Login</button>
+              <button onClick={handleLogin} disabled={loading} class="w-full mt-6 bg-ntpc-blue hover:bg-blue-900 text-white p-3.5 rounded-xl text-xs font-black tracking-widest uppercase shadow-md transition-all">Secure Login</button>
             </div>
           </div>
         );
@@ -205,13 +216,15 @@
 
       return (
         <div class="min-h-screen flex flex-col">
+          <datalist id="preset-tasks">{presetTasks.map(pt => <option key={pt} value={pt} />)}</datalist>
+
           <header class="glass-nav text-white px-8 py-3.5 sticky top-0 z-50 shadow-sm no-print flex justify-between items-center">
             <div class="flex items-center gap-4">
               <div class="w-10 h-10 bg-ntpc-orange rounded-xl flex items-center justify-center font-black text-xl shadow-md border border-white/10">N</div>
               <div><h1 class="text-sm font-black uppercase tracking-widest leading-none">NTPC Review Portal</h1><p class="text-[10px] text-blue-200 font-bold uppercase tracking-widest mt-1.5">{statusMsg}</p></div>
             </div>
             <nav class="flex bg-black/20 p-1.5 rounded-xl border border-white/10 backdrop-blur-md">
-              {["DASHBOARD", "EXECUTION", "DRAWINGS", "HSE & QA", "ACTION TRACKER"].map((t) => (
+              {["DASHBOARD", "L2 SCHEDULE", "EXECUTION", "DRAWINGS", "HSE & QA", "ACTIONS"].map((t) => (
                 <button key={t} onClick={() => setTab(t)} class={`px-4 py-1.5 text-[10px] font-black tracking-widest uppercase rounded-lg transition-all ${tab === t ? "bg-ntpc-orange text-white shadow-md" : "text-blue-100 hover:text-white"}`}>{t}</button>
               ))}
             </nav>
@@ -219,8 +232,8 @@
               <select value={weekNo} onChange={(e) => setWeekNo(parseInt(e.target.value))} class="bg-black/20 text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-white/10 outline-none cursor-pointer">{availableWeeks.map(w => <option key={w} value={w} class="text-slate-900">Week {w}</option>)}</select>
               {role === "NTPC" && <button onClick={() => setShowWeekModal(true)} class="bg-blue-800 hover:bg-blue-700 px-2.5 py-1.5 rounded-lg text-xs font-bold text-white shadow">+ Wk</button>}
               <span class={`px-3 py-1.5 text-[10px] font-black tracking-widest uppercase rounded-md border ${isLocked ? "bg-red-500/20 text-red-300 border-red-500/30" : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"}`}>{isLocked ? "LOCKED" : "OPEN"}</span>
-              <button onClick={() => window.print()} class="bg-white text-ntpc-blue hover:bg-slate-100 px-4 py-1.5 rounded-lg text-xs font-black tracking-widest uppercase shadow-md">Print MoM</button>
-              <button onClick={handleLogout} class="bg-slate-800 hover:bg-slate-700 text-white px-4 py-1.5 rounded-lg text-xs font-black tracking-widest uppercase shadow-md">Logout</button>
+              <button onClick={() => window.print()} class="bg-white text-ntpc-blue px-4 py-1.5 rounded-lg text-xs font-black tracking-widest uppercase shadow-md">Print MoM</button>
+              <button onClick={handleLogout} class="bg-slate-800 text-white px-4 py-1.5 rounded-lg text-xs font-black tracking-widest uppercase">Log Out</button>
             </div>
           </header>
 
@@ -229,29 +242,59 @@
             {tab === "DASHBOARD" && (
               <div class="space-y-6 animate-fade">
                 <div class="grid grid-cols-4 gap-4">
-                  <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80"><span class="text-[10px] font-extrabold uppercase text-slate-400">Open Safety Issues</span><div class="text-3xl font-black text-ntpc-orange mt-1">{safetyLogs.filter(s=>s.status==="Open").length}</div></div>
-                  <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80"><span class="text-[10px] font-extrabold uppercase text-slate-400">Open Quality NCRs</span><div class="text-3xl font-black text-blue-600 mt-1">{qualityLogs.filter(q=>q.status==="Open").length}</div></div>
-                  <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80"><span class="text-[10px] font-extrabold uppercase text-slate-400">Pending Actions</span><div class="text-3xl font-black text-red-600 mt-1">{actions.filter(a=>a.status!=="Completed").length}</div></div>
-                  <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80"><span class="text-[10px] font-extrabold uppercase text-slate-400">Milestones Achieved</span><div class="text-3xl font-black text-emerald-600 mt-1">{allMilestones.filter(m=>m.milestone==="Completed").length}</div></div>
+                  <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80"><span class="text-[10px] font-extrabold uppercase text-slate-400">Civil Acheivement (Wk {weekNo})</span><div class="text-3xl font-black text-ntpc-blue mt-1">{globalProgress}%</div></div>
+                  <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80"><span class="text-[10px] font-extrabold uppercase text-slate-400">Drawings Pending</span><div class="text-3xl font-black text-amber-500 mt-1">{drawings.filter(d=>d.status!=="Cat-1 Approved").length}</div></div>
+                  <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80"><span class="text-[10px] font-extrabold uppercase text-slate-400">Open Actions</span><div class="text-3xl font-black text-red-600 mt-1">{actions.filter(a=>a.status!=="Completed").length}</div></div>
+                  <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80"><span class="text-[10px] font-extrabold uppercase text-slate-400">Safety Issues</span><div class="text-3xl font-black text-ntpc-orange mt-1">{safetyLogs.filter(s=>s.status==="Open").length}</div></div>
                 </div>
 
                 <div class="grid grid-cols-3 gap-6">
-                  <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm col-span-1">
-                    <h3 class="text-xs font-black text-ntpc-blue uppercase tracking-widest mb-6 border-b pb-3">HSE & Quality Closeout</h3>
-                    <div class="flex justify-around items-center h-48">
-                      <Donut pct={safePct} color="text-ntpc-orange" label="Safety" sub={`${safetyLogs.filter(s=>s.status==="Complied"||s.status==="Closed").length}/${safetyLogs.length} Complied`} />
-                      <Donut pct={qualPct} color="text-blue-600" label="Quality" sub={`${qualityLogs.filter(q=>q.status==="Complied"||q.status==="Closed").length}/${qualityLogs.length} Complied`} />
+                  <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm col-span-2">
+                    <div class="flex justify-between items-center mb-6">
+                      <h3 class="text-xs font-black text-ntpc-blue uppercase tracking-widest">Cumulative Execution Trends</h3>
+                      <select value={activeChartTask} onChange={e=>setActiveChartTask(e.target.value)} class="bg-slate-50 border border-slate-200 text-xs font-bold px-3 py-1.5 rounded-lg outline-none cursor-pointer">{presetTasks.map(pt => <option key={pt}>{pt}</option>)}</select>
                     </div>
+                    <TrendChart data={chartData} title={activeChartTask} />
                   </div>
 
-                  <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm col-span-2">
-                    <h3 class="text-xs font-black text-ntpc-blue uppercase tracking-widest mb-4">Meeting Attendees Setup</h3>
-                    <div class="grid grid-cols-2 gap-6">
-                      <div><label class="text-[10px] font-bold text-slate-400 uppercase">NTPC Participants</label><textarea value={attendees.ntpc} onChange={e=>setAttendees({...attendees, ntpc: e.target.value})} class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs outline-none mt-1 h-32" placeholder="Names/Designations..."/></div>
-                      <div><label class="text-[10px] font-bold text-slate-400 uppercase">TPL Participants</label><textarea value={attendees.tpl} onChange={e=>setAttendees({...attendees, tpl: e.target.value})} class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs outline-none mt-1 h-32" placeholder="Names/Designations..."/></div>
+                  <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm col-span-1">
+                    <h3 class="text-xs font-black text-ntpc-blue uppercase tracking-widest mb-4">Meeting Attendees</h3>
+                    <div class="space-y-4">
+                      <div><label class="text-[10px] font-bold text-slate-400 uppercase">NTPC</label><textarea value={attendees.ntpc} onChange={e=>setAttendees({...attendees, ntpc: e.target.value})} class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs outline-none mt-1 h-20"/></div>
+                      <div><label class="text-[10px] font-bold text-slate-400 uppercase">TPL</label><textarea value={attendees.tpl} onChange={e=>setAttendees({...attendees, tpl: e.target.value})} class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs outline-none mt-1 h-20"/></div>
                     </div>
-                    <button onClick={async () => { setLoading(true); await apiPost({action: "UPDATE_ATTENDEES", weekNo, ntpcAttendees: attendees.ntpc, tplAttendees: attendees.tpl}); setStatusMsg("Attendees Saved"); setLoading(false); }} class="mt-4 bg-ntpc-blue text-white px-6 py-2 rounded-lg text-xs font-black tracking-widest uppercase">Save Attendees</button>
+                    <button onClick={async () => { setLoading(true); await apiPost({action: "UPDATE_ATTENDEES", weekNo, ntpcAttendees: attendees.ntpc, tplAttendees: attendees.tpl}); setStatusMsg("Attendees Saved"); setLoading(false); }} class="mt-4 w-full bg-ntpc-blue text-white px-6 py-2 rounded-lg text-xs font-black tracking-widest uppercase">Save</button>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: L2 SCHEDULE */}
+            {tab === "L2 SCHEDULE" && (
+              <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden animate-fade">
+                <div class="p-4 bg-slate-50 border-b flex justify-between items-center">
+                  <h2 class="text-xs font-black text-ntpc-blue uppercase tracking-widest">Master L2 Schedule (Work Fronts)</h2>
+                  <div class="flex gap-2">
+                    <button onClick={() => setL2Schedule([...l2Schedule, {id:"", discipline:"Civil", desc:"", l2Start:"", actStart:"", l2End:"", actEnd:""}])} disabled={role==="TPL"} class="bg-ntpc-orange text-white px-4 py-1.5 rounded-md text-xs font-black uppercase disabled:opacity-50">+ Add L2 Front</button>
+                    <button onClick={() => saveData("L2_Schedule", l2Schedule)} disabled={role==="TPL"} class="bg-ntpc-blue text-white px-5 py-1.5 rounded-md text-xs font-black uppercase disabled:opacity-50">Save Schedule</button>
+                  </div>
+                </div>
+                <div class="table-container">
+                  <table class="w-full text-left text-xs">
+                    <thead><tr class="bg-ntpc-blue text-white uppercase text-[9px] tracking-widest"><th class="p-3 w-[15%]">Discipline</th><th class="p-3 w-[35%]">L2 Work Description / Area</th><th class="p-3 w-[12%] text-center">L2 Start</th><th class="p-3 w-[12%] text-center">Actual Start</th><th class="p-3 w-[12%] text-center">L2 End</th><th class="p-3 w-[12%] text-center">Actual End</th></tr></thead>
+                    <tbody class="divide-y divide-slate-100">
+                      {l2Schedule.map((l2, idx) => (
+                        <tr key={idx} class="hover:bg-slate-50">
+                          <td class="p-2"><select disabled={role==="TPL"} value={l2.discipline} onChange={e=>handleChange(l2Schedule, setL2Schedule, idx, "discipline", e.target.value)} class="w-full bg-slate-100 rounded p-1.5 outline-none font-bold"><option>Civil</option><option>Mechanical</option><option>Electrical</option></select></td>
+                          <td class="p-2"><input type="text" disabled={role==="TPL"} value={l2.desc} onChange={e=>handleChange(l2Schedule, setL2Schedule, idx, "desc", e.target.value)} class="w-full bg-transparent font-bold border-b border-slate-200 outline-none focus:border-ntpc-orange" placeholder="e.g. Boiler Area Foundation..." /></td>
+                          <td class="p-2"><input type="date" disabled={role==="TPL"} value={l2.l2Start} onChange={e=>handleChange(l2Schedule, setL2Schedule, idx, "l2Start", e.target.value)} class="w-full bg-slate-100 rounded p-1.5 outline-none text-[10px] font-bold" /></td>
+                          <td class="p-2"><input type="date" disabled={role==="TPL"} value={l2.actStart} onChange={e=>handleChange(l2Schedule, setL2Schedule, idx, "actStart", e.target.value)} class="w-full bg-blue-50 rounded p-1.5 outline-none text-[10px] font-bold text-ntpc-blue" /></td>
+                          <td class="p-2"><input type="date" disabled={role==="TPL"} value={l2.l2End} onChange={e=>handleChange(l2Schedule, setL2Schedule, idx, "l2End", e.target.value)} class="w-full bg-slate-100 rounded p-1.5 outline-none text-[10px] font-bold" /></td>
+                          <td class="p-2"><input type="date" disabled={role==="TPL"} value={l2.actEnd} onChange={e=>handleChange(l2Schedule, setL2Schedule, idx, "actEnd", e.target.value)} class="w-full bg-blue-50 rounded p-1.5 outline-none text-[10px] font-bold text-ntpc-blue" /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
@@ -261,73 +304,47 @@
               <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden animate-fade">
                 <div class="p-4 bg-slate-50 border-b flex justify-between items-center">
                   <div class="flex gap-2">
-                    {[{k:"Civil_Execution", l:"Civil"}, {k:"Mech_Execution", l:"Mech"}, {k:"Elec_Execution", l:"Elec"}].map(d => (
+                    {[{k:"Civil_Execution", l:"Civil", f:"Civil"}, {k:"Mech_Execution", l:"Mech", f:"Mechanical"}, {k:"Elec_Execution", l:"Elec", f:"Electrical"}].map(d => (
                       <button key={d.k} onClick={()=>setActiveDiscipline(d.k)} class={`px-4 py-1.5 text-[11px] font-black tracking-widest uppercase rounded-md ${activeDiscipline === d.k ? "bg-ntpc-blue text-white" : "bg-white border text-slate-500"}`}>{d.l}</button>
                     ))}
                   </div>
                   <div class="flex gap-2">
-                    <button onClick={() => setCurrentTasks([...currentTasks, {id:"", desc:"", unit:"m³", plan:0, act:0, next:0, cumBacklog:0, tplRemarks:"", ntpcDirectives:"", milestone:"None"}])} disabled={isTplDisabled} class="bg-ntpc-orange text-white px-4 py-1.5 rounded-md text-xs font-black uppercase disabled:opacity-50">+ Add Item</button>
+                    <button onClick={() => setCurrentTasks([...currentTasks, {id:"", l2Ref:"", taskName:"", unit:"m³", plan:0, act:0, next:0, cumBacklog:0, tplRemarks:"", ntpcDirectives:"", milestone:"None"}])} disabled={isTplDisabled} class="bg-ntpc-orange text-white px-4 py-1.5 rounded-md text-xs font-black uppercase disabled:opacity-50">+ Add Item</button>
                     {role === "NTPC" && <button onClick={async () => { await apiPost({action:"TOGGLE_LOCK", weekNo, role, isLocked: !isLocked}); loadData(); }} class={`px-4 py-1.5 rounded-md text-xs font-black uppercase text-white ${isLocked ? "bg-emerald-600" : "bg-red-600"}`}>{isLocked ? "Unlock" : "Lock Week"}</button>}
                     <button onClick={() => saveData(activeDiscipline, currentTasks)} class="bg-ntpc-blue text-white px-5 py-1.5 rounded-md text-xs font-black uppercase">Save</button>
                   </div>
                 </div>
                 <div class="table-container">
                   <table class="w-full text-left text-xs">
-                    <thead><tr class="bg-ntpc-blue text-white uppercase text-[9px] tracking-widest"><th class="p-3 w-[16%]">Description</th><th class="p-3 w-[5%] text-center">Unit</th><th class="p-3 w-[6%] text-center">Wk Plan</th><th class="p-3 w-[6%] text-center">Wk Act</th><th class="p-3 w-[6%] text-center">Wk Shortfall</th><th class="p-3 w-[7%] text-center">Cum. Backlog</th><th class="p-3 w-[6%] text-center">Next Wk</th><th class="p-3 w-[8%] text-center">Milestone</th><th class="p-3 w-[20%] bg-sky-900">TPL Remarks</th><th class="p-3 w-[20%] bg-red-900">NTPC Directives</th></tr></thead>
+                    <thead><tr class="bg-ntpc-blue text-white uppercase text-[9px] tracking-widest"><th class="p-3 w-[20%]">L2 Work Front</th><th class="p-3 w-[12%]">Task</th><th class="p-3 w-[5%] text-center">Unit</th><th class="p-3 w-[6%] text-center">Wk Plan</th><th class="p-3 w-[6%] text-center">Wk Act</th><th class="p-3 w-[6%] text-center">Variance</th><th class="p-3 w-[6%] text-center">Cum. Backlog</th><th class="p-3 w-[6%] text-center">Next Wk</th><th class="p-3 w-[15%] bg-sky-900">TPL Remarks</th><th class="p-3 w-[15%] bg-red-900">NTPC Directives</th></tr></thead>
                     <tbody class="divide-y divide-slate-100">
-                      {currentTasks.map((t, idx) => (
+                      {currentTasks.map((t, idx) => {
+                        const variance = (parseFloat(t.act) || 0) - (parseFloat(t.plan) || 0);
+                        const varColor = variance < 0 ? "text-red-600 bg-red-50" : variance > 0 ? "text-emerald-700 bg-emerald-50" : "text-slate-400";
+                        const activeL2Options = l2Schedule.filter(x => x.discipline === (activeDiscipline === "Civil_Execution" ? "Civil" : activeDiscipline === "Mech_Execution" ? "Mechanical" : "Electrical"));
+                        
+                        return (
                         <tr key={idx} class="hover:bg-slate-50">
-                          <td class="p-2"><input type="text" disabled={isTplDisabled} value={t.desc} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "desc", e.target.value)} class="w-full font-bold bg-transparent outline-none" placeholder="Task..." /></td>
+                          <td class="p-2"><select disabled={isTplDisabled} value={t.l2Ref} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "l2Ref", e.target.value)} class="w-full bg-slate-100 rounded p-1.5 outline-none font-bold text-ntpc-blue text-[10px]"><option value="">-- Select L2 Reference --</option>{activeL2Options.map(o => <option key={o.id} value={o.desc}>{o.desc}</option>)}</select></td>
+                          <td class="p-2"><input type="text" list="preset-tasks" disabled={isTplDisabled} value={t.taskName} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "taskName", e.target.value)} class="w-full bg-transparent font-bold border-b border-slate-200 outline-none focus:border-ntpc-orange" placeholder="Excavation..." /></td>
                           <td class="p-2"><input type="text" disabled={isTplDisabled} value={t.unit} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "unit", e.target.value)} class="w-full bg-slate-100 rounded p-1 outline-none text-center" /></td>
                           <td class="p-2"><input type="number" disabled={isTplDisabled} value={t.plan} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "plan", e.target.value)} class="w-full bg-slate-100 rounded p-1 outline-none text-center font-bold" /></td>
-                          <td class="p-2"><input type="number" disabled={isTplDisabled} value={t.act} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "act", e.target.value)} class="w-full bg-blue-50 rounded p-1 outline-none text-center font-bold text-ntpc-blue" /></td>
-                          <td class="p-2 text-center font-bold text-red-500">{Math.max(0, (parseFloat(t.plan) || 0) - (parseFloat(t.act) || 0)) > 0 ? `-${Math.max(0, (parseFloat(t.plan) || 0) - (parseFloat(t.act) || 0))}` : "0"}</td>
-                          <td class="p-2"><input type="number" disabled={isTplDisabled} value={t.cumBacklog} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "cumBacklog", e.target.value)} class="w-full bg-red-50 border border-red-200 rounded p-1 outline-none text-center font-black text-red-700" title="Cumulative Total Backlog" /></td>
+                          <td class="p-2"><input type="number" disabled={isTplDisabled} value={t.act} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "act", e.target.value)} class="w-full bg-blue-50 rounded p-1 outline-none text-center font-black text-ntpc-blue" /></td>
+                          <td class={`p-2 text-center font-black text-[11px] rounded ${varColor}`}>{variance > 0 ? `+${variance}` : variance}</td>
+                          <td class="p-2"><input type="number" disabled={isTplDisabled} value={t.cumBacklog} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "cumBacklog", e.target.value)} class="w-full bg-red-50 border border-red-100 rounded p-1 outline-none text-center font-black text-red-600" title="Cumulative Total Backlog" /></td>
                           <td class="p-2"><input type="number" disabled={isTplDisabled} value={t.next} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "next", e.target.value)} class="w-full bg-slate-100 rounded p-1 outline-none text-center" /></td>
-                          <td class="p-2"><select disabled={isTplDisabled} value={t.milestone} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "milestone", e.target.value)} class="w-full bg-slate-100 rounded p-1 text-[10px] font-bold outline-none"><option>None</option><option>Started</option><option>Completed</option></select></td>
-                          <td class="p-2 bg-sky-50/30"><textarea rows="1" disabled={role==="NTPC"||isTplDisabled} value={t.tplRemarks} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "tplRemarks", e.target.value)} class="w-full bg-white border border-slate-200 rounded p-1 text-[11px] outline-none" /></td>
-                          <td class="p-2 bg-red-50/30"><textarea rows="1" disabled={role==="TPL"} value={t.ntpcDirectives} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "ntpcDirectives", e.target.value)} class="w-full bg-white border border-slate-200 rounded p-1 text-[11px] outline-none text-red-900 font-bold" /></td>
+                          <td class="p-2 bg-sky-50/30"><textarea rows="1" disabled={role==="NTPC"||isTplDisabled} value={t.tplRemarks} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "tplRemarks", e.target.value)} class="w-full bg-white border border-slate-200 rounded p-1 text-[10px] outline-none" /></td>
+                          <td class="p-2 bg-red-50/30"><textarea rows="1" disabled={role==="TPL"} value={t.ntpcDirectives} onChange={e=>handleChange(currentTasks, setCurrentTasks, idx, "ntpcDirectives", e.target.value)} class="w-full bg-white border border-slate-200 rounded p-1 text-[10px] outline-none text-red-900 font-bold" /></td>
                         </tr>
-                      ))}
+                      )})}
                     </tbody>
                   </table>
                 </div>
               </div>
             )}
 
-            {/* TAB: DRAWINGS */}
-            {tab === "DRAWINGS" && (
-              <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden animate-fade">
-                <div class="p-4 bg-slate-50 border-b flex justify-between items-center">
-                  <h2 class="text-xs font-black text-ntpc-blue uppercase tracking-widest">Drawings / DCI Availability Status</h2>
-                  <div class="flex gap-2">
-                    <button onClick={() => setDrawings([...drawings, {id:"", discipline:"Civil", drawingNo:"", desc:"", targetDate:"", expectedDate:"", status:"Pending", frontImpact:"", remarks:""}])} disabled={isTplDisabled} class="bg-ntpc-orange text-white px-4 py-1.5 rounded-md text-xs font-black uppercase disabled:opacity-50">+ Add Drawing</button>
-                    <button onClick={() => saveData("Drawings_Status", drawings)} class="bg-ntpc-blue text-white px-5 py-1.5 rounded-md text-xs font-black uppercase">Save</button>
-                  </div>
-                </div>
-                <div class="table-container">
-                  <table class="w-full text-left text-xs">
-                    <thead><tr class="bg-ntpc-blue text-white uppercase text-[9px] tracking-widest"><th class="p-3 w-[10%]">Discipline</th><th class="p-3 w-[12%]">Dwg No.</th><th class="p-3 w-[18%]">Description / Title</th><th class="p-3 w-[9%]">Target</th><th class="p-3 w-[9%]">Expected</th><th class="p-3 w-[12%] text-center">Status</th><th class="p-3 w-[15%] bg-red-900">Front Impact</th><th class="p-3 w-[15%] bg-sky-900">Remarks</th></tr></thead>
-                    <tbody class="divide-y divide-slate-100">
-                      {drawings.map((d, idx) => (
-                        <tr key={idx} class="hover:bg-slate-50">
-                          <td class="p-2"><select disabled={isTplDisabled} value={d.discipline} onChange={e=>handleChange(drawings, setDrawings, idx, "discipline", e.target.value)} class="w-full bg-slate-100 rounded p-1 outline-none font-bold"><option>Civil</option><option>Mechanical</option><option>Electrical</option><option>Architecture</option></select></td>
-                          <td class="p-2"><input type="text" disabled={isTplDisabled} value={d.drawingNo} onChange={e=>handleChange(drawings, setDrawings, idx, "drawingNo", e.target.value)} class="w-full bg-slate-100 font-bold rounded p-1.5 outline-none" /></td>
-                          <td class="p-2"><input type="text" disabled={isTplDisabled} value={d.desc} onChange={e=>handleChange(drawings, setDrawings, idx, "desc", e.target.value)} class="w-full bg-transparent font-bold border-b border-slate-200 outline-none focus:border-ntpc-orange" /></td>
-                          <td class="p-2"><input type="date" disabled={isTplDisabled} value={d.targetDate} onChange={e=>handleChange(drawings, setDrawings, idx, "targetDate", e.target.value)} class="w-full bg-slate-100 rounded p-1 outline-none text-[10px] font-bold" /></td>
-                          <td class="p-2"><input type="date" disabled={isTplDisabled} value={d.expectedDate} onChange={e=>handleChange(drawings, setDrawings, idx, "expectedDate", e.target.value)} class="w-full bg-slate-100 rounded p-1 outline-none text-[10px] font-bold text-ntpc-orange" /></td>
-                          <td class="p-2 text-center"><button onClick={() => {if(role==="NTPC") {const ns = d.status==="Pending"?"Under Review":d.status==="Under Review"?"Cat-1 Approved":"Pending"; handleChange(drawings, setDrawings, idx, "status", ns);}}} class={`px-2.5 py-1 rounded text-[10px] font-black uppercase w-full ${d.status==="Cat-1 Approved"?"bg-emerald-100 text-emerald-800":d.status==="Under Review"?"bg-amber-100 text-amber-800":"bg-red-100 text-red-800"}`} disabled={role!=="NTPC"}>{d.status}</button></td>
-                          <td class="p-2 bg-red-50/30"><textarea rows="1" disabled={isTplDisabled} value={d.frontImpact} onChange={e=>handleChange(drawings, setDrawings, idx, "frontImpact", e.target.value)} class="w-full bg-white border border-slate-200 rounded p-1 text-[11px] outline-none text-red-900 font-bold" /></td>
-                          <td class="p-2 bg-sky-50/30"><textarea rows="1" disabled={isTplDisabled} value={d.remarks} onChange={e=>handleChange(drawings, setDrawings, idx, "remarks", e.target.value)} class="w-full bg-white border border-slate-200 rounded p-1 text-[11px] outline-none" /></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* TAB: HSE & QA */}
+            {/* Other tabs map strictly to the data structure similar to previous build */}
+            
             {tab === "HSE & QA" && (
               <div class="space-y-6 animate-fade">
                 <div class="flex justify-between items-center">
@@ -341,38 +358,14 @@
               </div>
             )}
 
-            {/* TAB: ACTION TRACKER */}
-            {tab === "ACTION TRACKER" && (
+            {tab === "DRAWINGS" && (
               <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden animate-fade">
-                <div class="p-4 bg-slate-50 border-b flex justify-between items-center">
-                  <h2 class="text-xs font-black text-ntpc-blue uppercase tracking-widest">Pending Activities & Bottlenecks</h2>
-                  <div class="flex gap-2">
-                    <button onClick={() => setActions([...actions, {id:"", category:"Execution", desc:"", responsibility:"TPL", targetDate:"", revisedDate:"", status:"Pending", ntpcRemarks:""}])} disabled={isTplDisabled} class="bg-ntpc-orange text-white px-4 py-1.5 rounded-md text-xs font-black uppercase disabled:opacity-50">+ Add Action</button>
-                    <button onClick={() => saveData("Action_Tracker", actions)} class="bg-ntpc-blue text-white px-5 py-1.5 rounded-md text-xs font-black uppercase">Save</button>
-                  </div>
-                </div>
-                <div class="table-container">
-                  <table class="w-full text-left text-xs">
-                    <thead><tr class="bg-ntpc-blue text-white uppercase text-[9px] tracking-widest"><th class="p-3 w-[12%]">Category</th><th class="p-3 w-[24%]">Action Description</th><th class="p-3 w-[10%]">Resp.</th><th class="p-3 w-[10%]">Target Date</th><th class="p-3 w-[10%]">Revised Date</th><th class="p-3 w-[12%] text-center">Status</th><th class="p-3 w-[22%] bg-red-900">NTPC Remarks / Review</th></tr></thead>
-                    <tbody class="divide-y divide-slate-100">
-                      {actions.map((a, idx) => (
-                        <tr key={idx} class="hover:bg-slate-50">
-                          <td class="p-2"><select disabled={isTplDisabled} value={a.category} onChange={e=>handleChange(actions, setActions, idx, "category", e.target.value)} class="w-full bg-slate-100 rounded p-1.5 outline-none font-bold"><option>Execution</option><option>Engineering</option><option>Procurement</option><option>Clearance</option></select></td>
-                          <td class="p-2">
-                            <span class="text-[8px] font-black text-red-500 uppercase block mb-1">{a.weekNo && a.weekNo != weekNo ? `From Wk ${a.weekNo}` : ''}</span>
-                            <input type="text" disabled={isTplDisabled} value={a.desc} onChange={e=>handleChange(actions, setActions, idx, "desc", e.target.value)} class="w-full bg-transparent font-bold border-b border-slate-200 outline-none" placeholder="Description..." />
-                          </td>
-                          <td class="p-2"><input type="text" disabled={isTplDisabled} value={a.responsibility} onChange={e=>handleChange(actions, setActions, idx, "responsibility", e.target.value)} class="w-full bg-slate-100 font-bold rounded p-1.5 outline-none" /></td>
-                          <td class="p-2"><input type="date" disabled={isTplDisabled} value={a.targetDate} onChange={e=>handleChange(actions, setActions, idx, "targetDate", e.target.value)} class="w-full bg-slate-100 rounded p-1.5 outline-none font-bold text-[10px]" /></td>
-                          <td class="p-2"><input type="date" disabled={role==="TPL"} value={a.revisedDate} onChange={e=>handleChange(actions, setActions, idx, "revisedDate", e.target.value)} class="w-full bg-amber-50 border border-amber-200 rounded p-1.5 outline-none font-bold text-[10px] text-amber-700" title="Only NTPC can revise target dates" /></td>
-                          <td class="p-2 text-center"><button onClick={() => {if(role==="NTPC") {const ns = a.status==="Pending"?"In Progress":a.status==="In Progress"?"Completed":"Pending"; handleChange(actions, setActions, idx, "status", ns);}}} disabled={role!=="NTPC"} class={`px-2 py-1 rounded text-[10px] font-black uppercase w-full ${a.status==="Completed"?"bg-emerald-100 text-emerald-800":a.status==="In Progress"?"bg-amber-100 text-amber-800":"bg-red-100 text-red-800"}`} title="Only NTPC can update completion">{a.status}</button></td>
-                          <td class="p-2 bg-red-50/30"><textarea rows="1" disabled={role==="TPL"} value={a.ntpcRemarks} onChange={e=>handleChange(actions, setActions, idx, "ntpcRemarks", e.target.value)} class="w-full bg-white border border-slate-200 rounded p-1.5 text-[11px] outline-none text-red-900 font-bold" /></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                <div class="p-4 bg-slate-50 border-b flex justify-between items-center"><h2 class="text-xs font-black text-ntpc-blue uppercase tracking-widest">Drawings / DCI Availability Status</h2><div class="flex gap-2"><button onClick={() => setDrawings([...drawings, {id:"", discipline:"Civil", drawingNo:"", desc:"", targetDate:"", expectedDate:"", status:"Pending", frontImpact:"", remarks:""}])} disabled={isTplDisabled} class="bg-ntpc-orange text-white px-4 py-1.5 rounded-md text-xs font-black uppercase disabled:opacity-50">+ Add Drawing</button><button onClick={() => saveData("Drawings_Status", drawings)} class="bg-ntpc-blue text-white px-5 py-1.5 rounded-md text-xs font-black uppercase">Save</button></div></div>
+                <div class="table-container"><table class="w-full text-left text-xs"><thead><tr class="bg-ntpc-blue text-white uppercase text-[9px] tracking-widest"><th class="p-3 w-[10%]">Discipline</th><th class="p-3 w-[12%]">Dwg No.</th><th class="p-3 w-[18%]">Description / Title</th><th class="p-3 w-[9%]">Target</th><th class="p-3 w-[9%]">Expected</th><th class="p-3 w-[12%] text-center">Status</th><th class="p-3 w-[15%] bg-red-900">Front Impact</th><th class="p-3 w-[15%] bg-sky-900">Remarks</th></tr></thead><tbody class="divide-y divide-slate-100">{drawings.map((d, idx) => (<tr key={idx} class="hover:bg-slate-50"><td class="p-2"><select disabled={isTplDisabled} value={d.discipline} onChange={e=>handleChange(drawings, setDrawings, idx, "discipline", e.target.value)} class="w-full bg-slate-100 rounded p-1 outline-none font-bold"><option>Civil</option><option>Mechanical</option><option>Electrical</option><option>Architecture</option></select></td><td class="p-2"><input type="text" disabled={isTplDisabled} value={d.drawingNo} onChange={e=>handleChange(drawings, setDrawings, idx, "drawingNo", e.target.value)} class="w-full bg-slate-100 font-bold rounded p-1.5 outline-none" /></td><td class="p-2"><input type="text" disabled={isTplDisabled} value={d.desc} onChange={e=>handleChange(drawings, setDrawings, idx, "desc", e.target.value)} class="w-full bg-transparent font-bold border-b border-slate-200 outline-none focus:border-ntpc-orange" /></td><td class="p-2"><input type="date" disabled={isTplDisabled} value={d.targetDate} onChange={e=>handleChange(drawings, setDrawings, idx, "targetDate", e.target.value)} class="w-full bg-slate-100 rounded p-1 outline-none text-[10px] font-bold" /></td><td class="p-2"><input type="date" disabled={isTplDisabled} value={d.expectedDate} onChange={e=>handleChange(drawings, setDrawings, idx, "expectedDate", e.target.value)} class="w-full bg-slate-100 rounded p-1 outline-none text-[10px] font-bold text-ntpc-orange" /></td><td class="p-2 text-center"><button onClick={() => {if(role==="NTPC") {const ns = d.status==="Pending"?"Under Review":d.status==="Under Review"?"Cat-1 Approved":"Pending"; handleChange(drawings, setDrawings, idx, "status", ns);}}} class={`px-2.5 py-1 rounded text-[10px] font-black uppercase w-full ${d.status==="Cat-1 Approved"?"bg-emerald-100 text-emerald-800":d.status==="Under Review"?"bg-amber-100 text-amber-800":"bg-red-100 text-red-800"}`} disabled={role!=="NTPC"}>{d.status}</button></td><td class="p-2 bg-red-50/30"><textarea rows="1" disabled={isTplDisabled} value={d.frontImpact} onChange={e=>handleChange(drawings, setDrawings, idx, "frontImpact", e.target.value)} class="w-full bg-white border border-slate-200 rounded p-1 text-[11px] outline-none text-red-900 font-bold" /></td><td class="p-2 bg-sky-50/30"><textarea rows="1" disabled={isTplDisabled} value={d.remarks} onChange={e=>handleChange(drawings, setDrawings, idx, "remarks", e.target.value)} class="w-full bg-white border border-slate-200 rounded p-1 text-[11px] outline-none" /></td></tr>))}</tbody></table></div></div>
+            )}
+
+            {tab === "ACTIONS" && (
+              <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden animate-fade"><div class="p-4 bg-slate-50 border-b flex justify-between items-center"><h2 class="text-xs font-black text-ntpc-blue uppercase tracking-widest">Pending Activities & Bottlenecks</h2><div class="flex gap-2"><button onClick={() => setActions([...actions, {id:"", category:"Execution", desc:"", responsibility:"TPL", targetDate:"", revisedDate:"", status:"Pending", ntpcRemarks:""}])} disabled={isTplDisabled} class="bg-ntpc-orange text-white px-4 py-1.5 rounded-md text-xs font-black uppercase disabled:opacity-50">+ Add Action</button><button onClick={() => saveData("Action_Tracker", actions)} class="bg-ntpc-blue text-white px-5 py-1.5 rounded-md text-xs font-black uppercase">Save</button></div></div><div class="table-container"><table class="w-full text-left text-xs"><thead><tr class="bg-ntpc-blue text-white uppercase text-[9px] tracking-widest"><th class="p-3 w-[12%]">Category</th><th class="p-3 w-[24%]">Action Description</th><th class="p-3 w-[10%]">Resp.</th><th class="p-3 w-[10%]">Target Date</th><th class="p-3 w-[10%]">Revised Date</th><th class="p-3 w-[12%] text-center">Status</th><th class="p-3 w-[22%] bg-red-900">NTPC Remarks / Review</th></tr></thead><tbody class="divide-y divide-slate-100">{actions.map((a, idx) => (<tr key={idx} class="hover:bg-slate-50"><td class="p-2"><select disabled={isTplDisabled} value={a.category} onChange={e=>handleChange(actions, setActions, idx, "category", e.target.value)} class="w-full bg-slate-100 rounded p-1.5 outline-none font-bold"><option>Execution</option><option>Engineering</option><option>Procurement</option><option>Clearance</option></select></td><td class="p-2"><span class="text-[8px] font-black text-red-500 uppercase block mb-1">{a.weekNo && a.weekNo != weekNo ? `From Wk ${a.weekNo}` : ''}</span><input type="text" disabled={isTplDisabled} value={a.desc} onChange={e=>handleChange(actions, setActions, idx, "desc", e.target.value)} class="w-full bg-transparent font-bold border-b border-slate-200 outline-none" placeholder="Description of bottleneck..." /></td><td class="p-2"><input type="text" disabled={isTplDisabled} value={a.responsibility} onChange={e=>handleChange(actions, setActions, idx, "responsibility", e.target.value)} class="w-full bg-slate-100 font-bold rounded p-1.5 outline-none" /></td><td class="p-2"><input type="date" disabled={isTplDisabled} value={a.targetDate} onChange={e=>handleChange(actions, setActions, idx, "targetDate", e.target.value)} class="w-full bg-slate-100 rounded p-1.5 outline-none font-bold text-[10px]" /></td><td class="p-2"><input type="date" disabled={role==="TPL"} value={a.revisedDate} onChange={e=>handleChange(actions, setActions, idx, "revisedDate", e.target.value)} class="w-full bg-amber-50 border border-amber-200 rounded p-1.5 outline-none font-bold text-[10px] text-amber-700" title="Only NTPC can revise target dates" /></td><td class="p-2 text-center"><button onClick={() => {if(role==="NTPC") {const ns = a.status==="Pending"?"In Progress":a.status==="In Progress"?"Completed":"Pending"; handleChange(actions, setActions, idx, "status", ns);}}} disabled={role!=="NTPC"} class={`px-2 py-1 rounded text-[10px] font-black uppercase w-full ${a.status==="Completed"?"bg-emerald-100 text-emerald-800":a.status==="In Progress"?"bg-amber-100 text-amber-800":"bg-red-100 text-red-800"}`} title="Only NTPC can update completion">{a.status}</button></td><td class="p-2 bg-red-50/30"><textarea rows="1" disabled={role==="TPL"} value={a.ntpcRemarks} onChange={e=>handleChange(actions, setActions, idx, "ntpcRemarks", e.target.value)} class="w-full bg-white border border-slate-200 rounded p-1.5 text-[11px] outline-none text-red-900 font-bold" /></td></tr>))}</tbody></table></div></div>
             )}
           </main>
 
@@ -390,10 +383,10 @@
               <div class="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl animate-fade">
                 <h3 class="text-sm font-black text-ntpc-blue uppercase tracking-widest mb-6 border-b pb-3">Log Site Observation</h3>
                 <div class="space-y-4">
-                  <div><label class="text-[10px] font-black uppercase text-slate-400 block mb-1">Observation Type</label><select value={logForm.type} onChange={e => setLogForm({ ...logForm, type: e.target.value })} class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs font-bold outline-none focus:border-ntpc-orange"><option value="Safety">Safety Lapse</option><option value="Quality">Quality NCR</option></select></div>
-                  <div><label class="text-[10px] font-black uppercase text-slate-400 block mb-1">Category / Area</label><input type="text" value={logForm.category} onChange={e => setLogForm({ ...logForm, category: e.target.value })} class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs font-bold outline-none focus:border-ntpc-orange" placeholder="e.g., Boiler Area 2" /></div>
-                  <div><label class="text-[10px] font-black uppercase text-slate-400 block mb-1">Detailed Description</label><textarea rows="3" value={logForm.desc} onChange={e => setLogForm({ ...logForm, desc: e.target.value })} class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs font-bold outline-none focus:border-ntpc-orange" placeholder="Describe the issue..." /></div>
-                  <div class="bg-slate-50 border-2 border-dashed border-slate-300 p-4 rounded-xl text-center"><label class="text-[10px] font-black uppercase text-slate-400 block mb-3">Upload Image to Google Drive</label><input type="file" accept="image/*" onChange={e => setLogForm({ ...logForm, file: e.target.files[0] })} class="w-full text-xs font-bold file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-ntpc-blue file:text-white file:font-black file:uppercase file:cursor-pointer" /></div>
+                  <div><label class="text-[10px] font-black uppercase text-slate-400 block mb-1">Type</label><select value={logForm.type} onChange={e => setLogForm({ ...logForm, type: e.target.value })} class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs font-bold outline-none focus:border-ntpc-orange"><option value="Safety">Safety Lapse</option><option value="Quality">Quality NCR</option></select></div>
+                  <div><label class="text-[10px] font-black uppercase text-slate-400 block mb-1">Category / Area</label><input type="text" value={logForm.category} onChange={e => setLogForm({ ...logForm, category: e.target.value })} class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs font-bold outline-none focus:border-ntpc-orange" /></div>
+                  <div><label class="text-[10px] font-black uppercase text-slate-400 block mb-1">Description</label><textarea rows="3" value={logForm.desc} onChange={e => setLogForm({ ...logForm, desc: e.target.value })} class="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-xs font-bold outline-none focus:border-ntpc-orange" /></div>
+                  <div class="bg-slate-50 border-2 border-dashed border-slate-300 p-4 rounded-xl text-center"><label class="text-[10px] font-black uppercase text-slate-400 block mb-3">Upload Image to Drive</label><input type="file" accept="image/*" onChange={e => setLogForm({ ...logForm, file: e.target.files[0] })} class="w-full text-xs font-bold file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-ntpc-blue file:text-white file:font-black file:uppercase file:cursor-pointer" /></div>
                 </div>
                 <div class="flex gap-3 mt-6"><button onClick={() => setShowLogModal(false)} class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 p-3 rounded-xl text-xs font-black uppercase tracking-widest">Cancel</button><button onClick={submitLog} class="flex-1 bg-ntpc-orange hover:bg-orange-700 text-white p-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-md">Upload & Save</button></div>
               </div>
@@ -411,35 +404,13 @@
             </div>
           )}
 
-          {/* PRINT MOM AREA */}
+          {/* PRINT MOM AREA (Truncated structural representation for backend mapping validation) */}
           <div id="printable-mom" class="hidden print:block p-0 font-sans text-slate-900 bg-white">
-            <div class="border-b-4 border-ntpc-blue pb-3 mb-6 flex justify-between items-end">
-              <div><h1 class="text-xl font-black uppercase text-ntpc-blue tracking-tight">3 x 660 MW Supercritical Thermal Power Project — Nabinagar</h1><h2 class="text-sm font-bold text-slate-600 uppercase tracking-widest mt-1">Minutes of Weekly Review Meeting (WRM) — Week {weekNo}</h2></div>
-              <div class="text-right text-[9px] font-bold text-slate-500 tracking-wider">REF: WRM/EPC/2026/W-{weekNo}<br/>Date: {new Date().toLocaleDateString('en-IN', {day: '2-digit', month: 'short', year: 'numeric'})}</div>
-            </div>
-            
-            <h3 class="text-xs font-black uppercase text-ntpc-blue tracking-widest mb-2 border-l-4 border-ntpc-orange pl-2">Meeting Participants</h3>
-            <table class="w-full text-left border-collapse border border-slate-300 text-[9px] mb-6">
-              <thead><tr class="bg-slate-100"><th class="p-2 border border-slate-300 w-1/2">Employer Representatives (NTPC)</th><th class="p-2 border border-slate-300 w-1/2">Contractor Representatives (M/s TPL)</th></tr></thead>
-              <tbody><tr><td class="p-2 border border-slate-300 whitespace-pre-line">{attendees.ntpc || "Not specified."}</td><td class="p-2 border border-slate-300 whitespace-pre-line">{attendees.tpl || "Not specified."}</td></tr></tbody>
-            </table>
-
-            <h3 class="text-xs font-black uppercase text-ntpc-blue tracking-widest mb-2 border-l-4 border-ntpc-orange pl-2">1. Execution Progress (Civil/Mech/Elec)</h3>
-            <table class="w-full text-left border-collapse border border-slate-300 text-[8px] mb-6">
-              <thead><tr class="bg-slate-100"><th class="p-1.5 border border-slate-300">Description</th><th class="p-1.5 border border-slate-300 text-center">Wk Plan</th><th class="p-1.5 border border-slate-300 text-center">Wk Act</th><th class="p-1.5 border border-slate-300 text-center">Cum. Backlog</th><th class="p-1.5 border border-slate-300 w-1/4">TPL Remarks</th><th class="p-1.5 border border-slate-300 w-1/4">NTPC Directives</th></tr></thead>
-              <tbody>{[...civilTasks, ...mechTasks, ...elecTasks].map((c,i)=><tr key={i}><td class="p-1.5 border border-slate-300 font-bold">{c.desc}</td><td class="p-1.5 border border-slate-300 text-center">{c.plan}</td><td class="p-1.5 border border-slate-300 text-center">{c.act}</td><td class="p-1.5 border border-slate-300 text-center font-bold text-red-700">{c.cumBacklog}</td><td class="p-1.5 border border-slate-300">{c.tplRemarks}</td><td class="p-1.5 border border-slate-300 text-red-900 font-bold">{c.ntpcDirectives}</td></tr>)}</tbody>
-            </table>
-
-            <h3 class="text-xs font-black uppercase text-ntpc-blue tracking-widest mb-2 border-l-4 border-ntpc-orange pl-2">2. Action Tracker & Pending Bottlenecks</h3>
-            <table class="w-full text-left border-collapse border border-slate-300 text-[8px] mb-6">
-              <thead><tr class="bg-slate-100"><th class="p-1.5 border border-slate-300">Action Description</th><th class="p-1.5 border border-slate-300">Resp.</th><th class="p-1.5 border border-slate-300 text-center">Target</th><th class="p-1.5 border border-slate-300 text-center">Status</th><th class="p-1.5 border border-slate-300 w-1/3">NTPC Review Remarks</th></tr></thead>
-              <tbody>{actions.map((a,i)=><tr key={i}><td class="p-1.5 border border-slate-300 font-bold">{a.desc}</td><td class="p-1.5 border border-slate-300">{a.responsibility}</td><td class="p-1.5 border border-slate-300 text-center font-bold">{a.revisedDate || a.targetDate}</td><td class="p-1.5 border border-slate-300 text-center font-bold">{a.status}</td><td class="p-1.5 border border-slate-300 text-red-900 font-bold">{a.ntpcRemarks}</td></tr>)}</tbody>
-            </table>
-            
-            <div class="mt-12 pt-6 flex justify-between text-[9px] font-bold uppercase tracking-widest">
-              <div class="text-center">Employer Representative (NTPC)<br/><br/><br/>__________________________________<br/>Signature & Stamp</div>
-              <div class="text-center">Contractor Representative (M/s TPL)<br/><br/><br/>__________________________________<br/>Signature & Stamp</div>
-            </div>
+            <div class="border-b-4 border-ntpc-blue pb-3 mb-6 flex justify-between items-end"><div><h1 class="text-xl font-black uppercase text-ntpc-blue tracking-tight">3 x 660 MW Supercritical Thermal Power Project — Nabinagar</h1><h2 class="text-sm font-bold text-slate-600 uppercase tracking-widest mt-1">Minutes of Weekly Review Meeting (WRM) — Week {weekNo}</h2></div><div class="text-right text-[9px] font-bold text-slate-500 tracking-wider">REF: WRM/EPC/2026/W-{weekNo}<br/>Date: {new Date().toLocaleDateString('en-IN', {day: '2-digit', month: 'short', year: 'numeric'})}</div></div>
+            <h3 class="text-xs font-black uppercase text-ntpc-blue tracking-widest mb-2 border-l-4 border-ntpc-orange pl-2">Meeting Participants</h3><table class="w-full text-left border-collapse border border-slate-300 text-[9px] mb-6"><thead><tr class="bg-slate-100"><th class="p-2 border border-slate-300 w-1/2">Employer Representatives (NTPC)</th><th class="p-2 border border-slate-300 w-1/2">Contractor Representatives (M/s TPL)</th></tr></thead><tbody><tr><td class="p-2 border border-slate-300 whitespace-pre-line">{attendees.ntpc || "Not specified."}</td><td class="p-2 border border-slate-300 whitespace-pre-line">{attendees.tpl || "Not specified."}</td></tr></tbody></table>
+            <h3 class="text-xs font-black uppercase text-ntpc-blue tracking-widest mb-2 border-l-4 border-ntpc-orange pl-2">1. L2 Execution Progress</h3><table class="w-full text-left border-collapse border border-slate-300 text-[8px] mb-6"><thead><tr class="bg-slate-100"><th class="p-1.5 border border-slate-300">L2 Ref / Task</th><th class="p-1.5 border border-slate-300 text-center">Wk Plan</th><th class="p-1.5 border border-slate-300 text-center">Wk Act</th><th class="p-1.5 border border-slate-300 text-center">Variance</th><th class="p-1.5 border border-slate-300 text-center">Cum. Backlog</th><th class="p-1.5 border border-slate-300 w-1/4">TPL Remarks</th><th class="p-1.5 border border-slate-300 w-1/4">NTPC Directives</th></tr></thead><tbody>{[...civilTasks, ...mechTasks, ...elecTasks].map((c,i)=><tr key={i}><td class="p-1.5 border border-slate-300 font-bold">{c.l2Ref} - {c.taskName}</td><td class="p-1.5 border border-slate-300 text-center">{c.plan}</td><td class="p-1.5 border border-slate-300 text-center">{c.act}</td><td class="p-1.5 border border-slate-300 text-center font-bold text-ntpc-blue">{(parseFloat(c.act)||0) - (parseFloat(c.plan)||0)}</td><td class="p-1.5 border border-slate-300 text-center font-bold text-red-700">{c.cumBacklog}</td><td class="p-1.5 border border-slate-300">{c.tplRemarks}</td><td class="p-1.5 border border-slate-300 text-red-900 font-bold">{c.ntpcDirectives}</td></tr>)}</tbody></table>
+            <h3 class="text-xs font-black uppercase text-ntpc-blue tracking-widest mb-2 border-l-4 border-ntpc-orange pl-2">2. Action Tracker & Pending Bottlenecks</h3><table class="w-full text-left border-collapse border border-slate-300 text-[8px] mb-6"><thead><tr class="bg-slate-100"><th class="p-1.5 border border-slate-300">Action Description</th><th class="p-1.5 border border-slate-300">Resp.</th><th class="p-1.5 border border-slate-300 text-center">Target</th><th class="p-1.5 border border-slate-300 text-center">Status</th><th class="p-1.5 border border-slate-300 w-1/3">NTPC Review Remarks</th></tr></thead><tbody>{actions.map((a,i)=><tr key={i}><td class="p-1.5 border border-slate-300 font-bold">{a.desc}</td><td class="p-1.5 border border-slate-300">{a.responsibility}</td><td class="p-1.5 border border-slate-300 text-center font-bold">{a.revisedDate || a.targetDate}</td><td class="p-1.5 border border-slate-300 text-center font-bold">{a.status}</td><td class="p-1.5 border border-slate-300 text-red-900 font-bold">{a.ntpcRemarks}</td></tr>)}</tbody></table>
+            <div class="mt-12 pt-6 flex justify-between text-[9px] font-bold uppercase tracking-widest"><div class="text-center">Employer Representative (NTPC)<br/><br/><br/>__________________________________<br/>Signature & Stamp</div><div class="text-center">Contractor Representative (M/s TPL)<br/><br/><br/>__________________________________<br/>Signature & Stamp</div></div>
           </div>
         </div>
       );
