@@ -373,9 +373,19 @@
           {viewImage && (
             <div class="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-8 animate-fade">
               <button onClick={() => setViewImage(null)} class="absolute top-6 right-8 text-white font-black text-2xl bg-white/10 hover:bg-white/30 rounded-full w-12 h-12 flex items-center justify-center transition-colors">✕</button>
-              <img src={`https://drive.google.com/thumbnail?id=${viewImage}&sz=w1200`} class="max-w-full max-h-[75vh] rounded-xl shadow-2xl border border-white/10 object-contain" alt="Evidence" />
-              <div class="mt-8">
-                 <a href={`https://drive.google.com/file/d/${viewImage}/view`} target="_blank" class="bg-ntpc-blue text-white px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg hover:bg-blue-800 transition-colors block text-center">Open Full Image in Google Drive</a>
+              
+              <div class="bg-white p-4 rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col items-center">
+                <p class="text-xs font-black text-ntpc-blue uppercase tracking-widest mb-4">Site Observation Evidence</p>
+                
+                {/* Embedded Secure Iframe Viewer */}
+                <div class="w-full h-[60vh] bg-slate-100 rounded-xl overflow-hidden border border-slate-200 flex items-center justify-center">
+                  <iframe src={viewImage.includes('drive.google.com') ? viewImage.replace('/view', '/preview').replace('uc?id=', 'file/d/').replace('&export=download', '') + '/preview' : viewImage} class="w-full h-full border-0" allow="autoplay"></iframe>
+                </div>
+
+                <div class="mt-6 flex gap-4 w-full">
+                   <a href={viewImage} target="_blank" class="flex-1 bg-ntpc-blue text-white py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-md hover:bg-blue-800 transition-colors text-center">Open Full Screen in Google Drive</a>
+                   <button onClick={() => setViewImage(null)} class="bg-slate-200 text-slate-700 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-300 transition-colors">Close</button>
+                </div>
               </div>
             </div>
           )}
