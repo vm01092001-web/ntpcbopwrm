@@ -33,7 +33,7 @@
     // ========================================================
     // PASTE YOUR DEPLOYED APPS SCRIPT WEB APP URL HERE:
     // ========================================================
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbykpQyELCK-cfZWM-745BbBo8Y64TV-IPGp-iejOEfjz51axNixPLA9ihQhWr4Mw1MRJQ/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxSRgroaYX3VUbG6weWVcqOrjzyIiEIf3_0pq8aySc5drXArn-KcF9YopTbHNNexmIOAw/exec";
 
     const apiPost = async (payload) => {
       const res = await fetch(SCRIPT_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
