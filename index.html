@@ -50,7 +50,7 @@
     // ========================================================
     // PASTE YOUR DEPLOYED APPS SCRIPT WEB APP URL HERE:
     // ========================================================
-    const SCRIPT_URL = "YOUR_WEB_APP_URL_HERE";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxqhyfNwcgVU2ty3YmH5dvdngNiWsPHoOLKoB8SD3ORJ4Krc8Bg9kNz9xl7h27yNtuWJA/exec";
 
     const apiPost = async (payload) => {
       const res = await fetch(SCRIPT_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
