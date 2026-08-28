@@ -30,7 +30,7 @@
   <script type="text/babel">
     const { useState, useEffect, useMemo } = React;
     
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwznl3ken4NUI02mbCNTzQgWlkRovM_aQFChMFQtBydtK7xYOXx8NA6p-q3ZlLmWcnTiw/exec";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz3AON3hDJbJCKLpQs7ARYbx-Fu-UiPyzpDrKfdWi9Rr05zj5yA_FwevjYeJX_WIw_m9w/exec";
 
     const apiPost = async (payload) => {
       const res = await fetch(SCRIPT_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
