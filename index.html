@@ -30,7 +30,10 @@
   <script type="text/babel">
     const { useState, useEffect, useMemo } = React;
     
-    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz3AON3hDJbJCKLpQs7ARYbx-Fu-UiPyzpDrKfdWi9Rr05zj5yA_FwevjYeJX_WIw_m9w/exec";
+    // ========================================================
+    // PASTE YOUR DEPLOYED APPS SCRIPT WEB APP URL HERE:
+    // ========================================================
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxvJlut8jt9s3ETW9-MALO5ooU1TTJAmIH9XfScgM0n8ZgwS5PF-4HHGOCNRhEfpUD1uQ/exec";
 
     const apiPost = async (payload) => {
       const res = await fetch(SCRIPT_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) });
@@ -82,9 +85,13 @@
 
       const [showLogModal, setShowLogModal] = useState(false);
       const [showWeekModal, setShowWeekModal] = useState(false);
-      const [viewImage, setViewImage] = useState(null); 
       const [newWeekInput, setNewWeekInput] = useState(36);
       const [logForm, setLogForm] = useState({ type: "Safety", category: "Unsafe Condition", desc: "", file: null });
+
+      // IMAGE RENDERER STATES
+      const [viewImageId, setViewImageId] = useState(null); 
+      const [viewImageData, setViewImageData] = useState(null);
+      const [imageLoading, setImageLoading] = useState(false);
 
       const presetTasks = ["Excavation", "PCC", "RCC", "Backfilling", "Brickwork", "Plastering", "Painting", "Drain PCC", "Drain RCC", "Drain Wall"];
 
@@ -139,6 +146,33 @@
 
       useEffect(() => { loadData(); }, [weekNo, authState]);
 
+      // NEW API FETCHER FOR IMAGES
+      const fetchAndShowImage = async (urlOrId) => {
+        if (!urlOrId) return;
+        
+        let fileId = urlOrId;
+        const match = urlOrId.match(/(?:id=|d\/)([a-zA-Z0-9_-]{25,})/);
+        if (match) fileId = match[1];
+
+        setViewImageId(fileId);
+        setImageLoading(true);
+        setViewImageData(null);
+
+        try {
+          const res = await apiPost({ action: "GET_IMAGE", fileId });
+          if (res.status === 200) {
+            setViewImageData(res.base64);
+          } else {
+            alert(res.error || "Failed to parse image from Drive.");
+            setViewImageId(null);
+          }
+        } catch (e) {
+          alert("Network failed to fetch image.");
+          setViewImageId(null);
+        }
+        setImageLoading(false);
+      };
+
       const currentTasks = activeDiscipline === "Civil_Execution" ? civilTasks : activeDiscipline === "Mech_Execution" ? mechTasks : elecTasks;
       const setCurrentTasks = (u) => { activeDiscipline === "Civil_Execution" ? setCivilTasks(u) : activeDiscipline === "Mech_Execution" ? setMechTasks(u) : setElecTasks(u); };
 
@@ -151,7 +185,6 @@
           const act = parseFloat(u[idx].act) || 0;
           const plan = parseFloat(u[idx].plan) || 0;
           const shortfall = plan - act;
-          // Dynamically adjust CumBacklog for immediate user feedback
           u[idx].cumBacklog = Math.max(0, (parseFloat(u[idx].cumBacklog) || 0) + shortfall);
         }
         setArr(u);
@@ -186,7 +219,6 @@
 
       const isTplDisabled = role === "TPL" && isLocked;
 
-      // Map heavily compressed history back to array for graph
       const chartData = useMemo(() => {
         const hKey = activeChartTask.toLowerCase();
         if(!civilHistory[hKey]) return [];
@@ -292,7 +324,7 @@
               <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden animate-fade">
                 <div class="p-4 bg-slate-50 border-b flex justify-between items-center">
                   <div class="flex gap-2">
-                    {[{k:"Civil_Execution", l:"Civil"}, {k:"Mech_Execution", l:"Mech"}, {k:"Elec_Execution", l:"Elec"}].map(d => (
+                    {[{k:"Civil_Execution", l:"Civil", f:"Civil"}, {k:"Mech_Execution", l:"Mech", f:"Mechanical"}, {k:"Elec_Execution", l:"Elec", f:"Electrical"}].map(d => (
                       <button key={d.k} onClick={()=>setActiveDiscipline(d.k)} class={`px-4 py-1.5 text-[11px] font-black tracking-widest uppercase rounded-md ${activeDiscipline === d.k ? "bg-ntpc-blue text-white" : "bg-white border text-slate-500"}`}>{d.l}</button>
                     ))}
                   </div>
@@ -357,8 +389,8 @@
                   <button onClick={() => setShowLogModal(true)} disabled={isTplDisabled} class="bg-ntpc-orange text-white px-5 py-2 rounded-lg text-xs font-black uppercase shadow-md">+ Log Violation (Upload Image)</button>
                 </div>
                 <div class="grid grid-cols-2 gap-6">
-                  <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm"><h3 class="text-[11px] font-black text-ntpc-orange uppercase tracking-widest mb-4">Safety Observations</h3><div class="space-y-3">{safetyLogs.map((s, i) => (<div key={i} class="p-3 bg-slate-50 rounded-xl border border-slate-200"><div class="flex justify-between font-bold"><span class="text-ntpc-blue text-xs">{s.id} (Wk {s.weekNo}) • {s.category}</span><button onClick={() => toggleLogStatus("Safety_Logs", s.id, s.status)} disabled={role!=="NTPC"} class={`px-2.5 py-0.5 rounded text-[10px] font-black uppercase ${s.status === 'Complied' || s.status === 'Closed' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{s.status === 'Complied' || s.status === 'Closed' ? '✓ Complied' : (role==='NTPC'?'⚠ Mark Complied':'⚠ Open')}</button></div><p class="text-slate-700 text-xs mt-2">{s.desc}</p>{s.photoUrl && <button onClick={()=>setViewImage(s.photoUrl)} class="text-blue-600 font-bold underline text-[10px] mt-2 block uppercase tracking-wider flex items-center gap-1">📷 View Image Evidence</button>}</div>))}</div></div>
-                  <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm"><h3 class="text-[11px] font-black text-blue-600 uppercase tracking-widest mb-4">Quality NCRs</h3><div class="space-y-3">{qualityLogs.map((q, i) => (<div key={i} class="p-3 bg-slate-50 rounded-xl border border-slate-200"><div class="flex justify-between font-bold"><span class="text-ntpc-blue text-xs">{q.id} (Wk {q.weekNo}) • {q.category}</span><button onClick={() => toggleLogStatus("Quality_Logs", q.id, q.status)} disabled={role!=="NTPC"} class={`px-2.5 py-0.5 rounded text-[10px] font-black uppercase ${q.status === 'Complied' || q.status === 'Closed' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{q.status === 'Complied' || q.status === 'Closed' ? '✓ Complied' : (role==='NTPC'?'⚠ Mark Complied':'⚠ Open')}</button></div><p class="text-slate-700 text-xs mt-2">{q.desc}</p>{q.photoUrl && <button onClick={()=>setViewImage(q.photoUrl)} class="text-blue-600 font-bold underline text-[10px] mt-2 block uppercase tracking-wider flex items-center gap-1">📷 View Image Evidence</button>}</div>))}</div></div>
+                  <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm"><h3 class="text-[11px] font-black text-ntpc-orange uppercase tracking-widest mb-4">Safety Observations</h3><div class="space-y-3">{safetyLogs.map((s, i) => (<div key={i} class="p-3 bg-slate-50 rounded-xl border border-slate-200"><div class="flex justify-between font-bold"><span class="text-ntpc-blue text-xs">{s.id} (Wk {s.weekNo}) • {s.category}</span><button onClick={() => toggleLogStatus("Safety_Logs", s.id, s.status)} disabled={role!=="NTPC"} class={`px-2.5 py-0.5 rounded text-[10px] font-black uppercase ${s.status === 'Complied' || s.status === 'Closed' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{s.status === 'Complied' || s.status === 'Closed' ? '✓ Complied' : (role==='NTPC'?'⚠ Mark Complied':'⚠ Open')}</button></div><p class="text-slate-700 text-xs mt-2">{s.desc}</p>{s.photoUrl && <button onClick={()=>fetchAndShowImage(s.photoUrl)} class="text-blue-600 font-bold underline text-[10px] mt-2 block uppercase tracking-wider flex items-center gap-1">📷 View Image Evidence</button>}</div>))}</div></div>
+                  <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm"><h3 class="text-[11px] font-black text-blue-600 uppercase tracking-widest mb-4">Quality NCRs</h3><div class="space-y-3">{qualityLogs.map((q, i) => (<div key={i} class="p-3 bg-slate-50 rounded-xl border border-slate-200"><div class="flex justify-between font-bold"><span class="text-ntpc-blue text-xs">{q.id} (Wk {q.weekNo}) • {q.category}</span><button onClick={() => toggleLogStatus("Quality_Logs", q.id, q.status)} disabled={role!=="NTPC"} class={`px-2.5 py-0.5 rounded text-[10px] font-black uppercase ${q.status === 'Complied' || q.status === 'Closed' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{q.status === 'Complied' || q.status === 'Closed' ? '✓ Complied' : (role==='NTPC'?'⚠ Mark Complied':'⚠ Open')}</button></div><p class="text-slate-700 text-xs mt-2">{q.desc}</p>{q.photoUrl && <button onClick={()=>fetchAndShowImage(q.photoUrl)} class="text-blue-600 font-bold underline text-[10px] mt-2 block uppercase tracking-wider flex items-center gap-1">📷 View Image Evidence</button>}</div>))}</div></div>
                 </div>
               </div>
             )}
@@ -369,22 +401,29 @@
             )}
           </main>
 
-          {/* BULLETPROOF IMAGE VIEWER */}
-          {viewImage && (
+          {/* BULLETPROOF IMAGE MODAL - Uses Direct Data Fetched via API */}
+          {viewImageId && (
             <div class="fixed inset-0 bg-black/90 backdrop-blur-md z-[100] flex flex-col items-center justify-center p-8 animate-fade">
-              <button onClick={() => setViewImage(null)} class="absolute top-6 right-8 text-white font-black text-2xl bg-white/10 hover:bg-white/30 rounded-full w-12 h-12 flex items-center justify-center transition-colors">✕</button>
+              <button onClick={() => setViewImageId(null)} class="absolute top-6 right-8 text-white font-black text-2xl bg-white/10 hover:bg-white/30 rounded-full w-12 h-12 flex items-center justify-center transition-colors">✕</button>
               
-              <div class="bg-white p-4 rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col items-center">
-                <p class="text-xs font-black text-ntpc-blue uppercase tracking-widest mb-4">Site Observation Evidence</p>
+              <div class="bg-white p-4 rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col items-center min-h-[50vh] justify-center relative">
+                <p class="text-[10px] font-black text-ntpc-blue uppercase tracking-widest absolute top-6">Site Observation Evidence</p>
                 
-                {/* Embedded Secure Iframe Viewer */}
-                <div class="w-full h-[60vh] bg-slate-100 rounded-xl overflow-hidden border border-slate-200 flex items-center justify-center">
-                  <iframe src={viewImage.includes('drive.google.com') ? viewImage.replace('/view', '/preview').replace('uc?id=', 'file/d/').replace('&export=download', '') + '/preview' : viewImage} class="w-full h-full border-0" allow="autoplay"></iframe>
-                </div>
+                {imageLoading ? (
+                  <div class="flex flex-col items-center gap-3 mt-4">
+                    <div class="w-10 h-10 border-4 border-ntpc-orange border-t-transparent rounded-full animate-spin"></div>
+                    <span class="text-xs font-bold text-slate-500 animate-pulse">Decrypting image from secure vault...</span>
+                  </div>
+                ) : (
+                  viewImageData ? (
+                    <img src={viewImageData} class="max-w-full max-h-[60vh] rounded-xl shadow-md border border-slate-200 object-contain mt-8" alt="Evidence" />
+                  ) : (
+                    <span class="text-xs font-bold text-red-500 mt-8">Image failed to load securely.</span>
+                  )
+                )}
 
-                <div class="mt-6 flex gap-4 w-full">
-                   <a href={viewImage} target="_blank" class="flex-1 bg-ntpc-blue text-white py-3 rounded-xl text-xs font-black uppercase tracking-widest shadow-md hover:bg-blue-800 transition-colors text-center">Open Full Screen in Google Drive</a>
-                   <button onClick={() => setViewImage(null)} class="bg-slate-200 text-slate-700 px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-slate-300 transition-colors">Close</button>
+                <div class="mt-8 flex gap-4 w-full justify-center">
+                   <a href={`https://drive.google.com/file/d/${viewImageId}/view`} target="_blank" class="px-8 py-3 bg-slate-100 text-slate-700 rounded-xl text-xs font-black uppercase tracking-widest shadow-sm hover:bg-slate-200 transition-colors text-center border border-slate-300">Open in Drive Tab</a>
                 </div>
               </div>
             </div>
