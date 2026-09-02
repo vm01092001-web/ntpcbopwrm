@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Nabinagar STPP Stage-II — Projector WRM Portal</title>
+  <title>Nabinagar STPP Stage-II — Live WRM Portal</title>
   
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -51,9 +51,9 @@
     const { useState, useEffect, useMemo, useRef } = React;
 
     // =========================================================================
-    // PASTE YOUR COPIED FIREBASE REALTIME DATABASE URL HERE (DO NOT FORGET /wrm_db.json AT THE END)
+    // YOUR EXACT FIREBASE URL - HARDCODED FOR GUARANTEED SUCCESS
     // =========================================================================
-    const FIREBASE_URL = "https://console.firebase.google.com/u/2/project/bopwrm/database/bopwrm-default-rtdb/data/~2F/wrm_db.json";
+    const FIREBASE_URL = "https://bopwrm-default-rtdb.firebaseio.com/wrm_db.json";
 
     const cleanDate = (val) => {
       if (!val) return "";
@@ -84,17 +84,9 @@
       const [db, setDbState] = useState(DEFAULT_DB);
       const [cloudStatus, setCloudStatus] = useState("Connecting to Cloud...");
       const [history, setHistory] = useState([]);
-      const isInitialMount = useRef(true);
 
-      // 1. Initial Cloud Sync on Startup
+      // 1. Initial Cloud Sync
       useEffect(() => {
-        if (FIREBASE_URL.includes("YOUR-PROJECT-ID")) {
-          setCloudStatus("Offline (Paste Firebase URL)");
-          const local = localStorage.getItem("ntpc_local_fallback");
-          if (local) setDbState(JSON.parse(local));
-          return;
-        }
-
         setCloudStatus("Fetching Cloud Data...");
         fetch(FIREBASE_URL)
           .then(res => res.json())
@@ -103,8 +95,7 @@
               setDbState(data);
               setCloudStatus("Cloud Synced (<80ms)");
             } else {
-              // Push default schema if cloud database is empty
-              saveToCloud(DEFAULT_DB);
+              saveToCloud(DEFAULT_DB); // Seed new DB
             }
           })
           .catch(err => {
@@ -118,8 +109,6 @@
       // 2. Cloud Save Engine
       const saveToCloud = (dataToSave) => {
         localStorage.setItem("ntpc_local_fallback", JSON.stringify(dataToSave));
-        if (FIREBASE_URL.includes("YOUR-PROJECT-ID")) return;
-
         setCloudStatus("Saving to Cloud...");
         fetch(FIREBASE_URL, {
           method: "PUT",
@@ -127,10 +116,7 @@
           body: JSON.stringify(dataToSave)
         })
         .then(() => setCloudStatus("Cloud Synced (<80ms)"))
-        .catch(err => {
-          console.error("Save failed:", err);
-          setCloudStatus("Sync Failed (Saved Locally)");
-        });
+        .catch(err => setCloudStatus("Sync Failed (Saved Locally)"));
       };
 
       const setDb = (updater) => {
@@ -148,9 +134,21 @@
           setDbState(previous);
           setHistory(h => h.slice(0, -1));
           saveToCloud(previous);
-        } else {
-          alert("No more actions to undo.");
-        }
+        } else { alert("No more actions to undo."); }
+      };
+
+      const revertTwoHours = () => {
+        if(!confirm("WARNING: This will delete ALL rows added within the last 2 hours. Proceed?")) return;
+        const threshold = Date.now() - (2 * 60 * 60 * 1000); 
+        setDb(prev => {
+          const roll = (arr) => arr.filter(item => !item.createdAt || item.createdAt <= threshold);
+          return {
+            ...prev,
+            l2Schedule: roll(prev.l2Schedule), civilExecution: roll(prev.civilExecution), mechExecution: roll(prev.mechExecution), elecExecution: roll(prev.elecExecution),
+            drawings: roll(prev.drawings), safetyLogs: roll(prev.safetyLogs), qualityLogs: roll(prev.qualityLogs), actions: roll(prev.actions)
+          };
+        });
+        alert("Recent additions wiped successfully.");
       };
 
       const [tab, setTab] = useState("DASHBOARD");
@@ -164,6 +162,8 @@
 
       const [showPrintModal, setShowPrintModal] = useState(false);
       const [printIncludeDashboard, setPrintIncludeDashboard] = useState(true);
+
+      useEffect(() => { setSelectedIds([]); }, [tab, activeDiscipline]);
 
       const currentMeta = db.weekMeta[weekNo] || { manpower: 0, trained: 0, ntpcAttendees: [], tplAttendees: [], distributionList: "" };
       const activeTasks = (activeDiscipline === "Civil" ? db.civilExecution : activeDiscipline === "Mechanical" ? db.mechExecution : db.elecExecution).filter(t => t.weekNo === weekNo);
@@ -340,6 +340,7 @@
             <div className="p-4 border-t border-white/10 space-y-3 bg-slate-900/50">
               <div className="text-[10px] font-black uppercase text-slate-400 text-center tracking-widest mb-1">Data & Safety Tools</div>
               <button onClick={handleUndo} className="w-full bg-slate-700 hover:bg-slate-600 text-white py-2 rounded text-xs font-black uppercase flex items-center justify-center gap-2">↩ Undo Last Action</button>
+              <button onClick={revertTwoHours} className="w-full bg-rose-900/50 hover:bg-rose-800 text-rose-300 py-2 rounded text-[10px] font-black uppercase border border-rose-800/50">⏰ Wipe Last 2 Hours</button>
               <div className="flex gap-2 mt-2 pt-2 border-t border-white/10">
                 <button onClick={exportBackup} title="Export database to JSON file" className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded text-[9px] font-black uppercase">Export JSON</button>
                 <label className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded text-[9px] font-black uppercase text-center cursor-pointer">
@@ -364,6 +365,7 @@
                       const roll = (arr) => arr.filter(t => t.weekNo === weekNo && t.milestone !== "Completed").map(t => ({ ...t, id: t.id.split('-')[0]+"-"+Date.now()+Math.floor(Math.random()*100), weekNo: nx, plan: parseFloat(t.next)||0, act: 0, next: 0, cumBacklog: Math.max(0, (parseFloat(t.cumBacklog)||0) + ((parseFloat(t.plan)||0)-(parseFloat(t.act)||0))), prevBacklog: Math.max(0, (parseFloat(t.cumBacklog)||0) + ((parseFloat(t.plan)||0)-(parseFloat(t.act)||0))), hindrance: "", tplRemarks: "", ntpcDirectives: "", createdAt: Date.now() }));
                       const rollD = prev.drawings.filter(d => d.weekNo === weekNo && d.status !== "Cat-1 Approved").map(d => ({...d, id: "DW-"+Date.now()+Math.floor(Math.random()*100), weekNo: nx, createdAt: Date.now()}));
                       const rollA = prev.actions.filter(a => a.weekNo === weekNo && a.status !== "Completed").map(a => ({...a, id: "ACT-"+Date.now()+Math.floor(Math.random()*100), weekNo: nx, createdAt: Date.now()}));
+                      
                       return {
                         ...prev, currentWeek: nx, weeks: [nx, ...prev.weeks],
                         weekMeta: { ...prev.weekMeta, [nx]: prev.weekMeta[weekNo] },
@@ -425,9 +427,10 @@
                     </table>
                   </div>
 
+                  {/* MAILING LIST MANAGER */}
                   <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                     <h3 className="text-sm font-black text-ntpc-blue uppercase tracking-wider mb-2">MoM Email Distribution List</h3>
-                    <p className="text-[11px] text-slate-500 font-bold mb-3">These emails will automatically be filled when clicking "Email Team". Separate with commas.</p>
+                    <p className="text-[11px] text-slate-500 font-bold mb-3">These emails will be auto-filled when you click "Email Team". Separate emails with commas.</p>
                     <textarea rows="2" value={currentMeta.distributionList} onChange={e => setDb(p=>({...p, weekMeta:{...p.weekMeta, [weekNo]:{...currentMeta, distributionList: e.target.value}}}))} placeholder="e.g. hop@ntpc.co.in, pm@tpl.com" className="w-full bg-slate-50 border border-slate-200 p-3 rounded-lg font-mono text-xs font-bold outline-none focus:border-ntpc-blue"></textarea>
                   </div>
                 </div>
@@ -467,15 +470,39 @@
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                      <div className="text-xs font-black text-blue-600 uppercase tracking-wider mb-2">Civil Works Targets</div>
+                      <div className="text-4xl font-black text-slate-800">{getHitCount(civilWk)} <span className="text-lg text-slate-400">/ {civilWk.length} Hit</span></div>
+                    </div>
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                      <div className="text-xs font-black text-amber-500 uppercase tracking-wider mb-2">Mech Works Targets</div>
+                      <div className="text-4xl font-black text-slate-800">{getHitCount(mechWk)} <span className="text-lg text-slate-400">/ {mechWk.length} Hit</span></div>
+                    </div>
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                      <div className="text-xs font-black text-emerald-500 uppercase tracking-wider mb-2">Elec Works Targets</div>
+                      <div className="text-4xl font-black text-slate-800">{getHitCount(elecWk)} <span className="text-lg text-slate-400">/ {elecWk.length} Hit</span></div>
+                    </div>
+                  </div>
+                  
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pending Drawings</span><div className="text-3xl font-black text-amber-500 mt-1">{pendingDwgs}</div></div>
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Open Bottlenecks</span><div className="text-3xl font-black text-rose-600 mt-1">{openActs}</div></div>
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Open Unsafe Conditions</span><div className="text-3xl font-black text-ntpc-orange mt-1">{openHse}</div></div>
                     <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Site Manpower Deployed</span><div className="text-3xl font-black text-blue-900 mt-1">{currentMeta.manpower}</div></div>
                   </div>
+
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <h3 className="text-sm font-black text-ntpc-blue uppercase tracking-wider mb-2">Contract L2 Schedule Variance & Obstruction Diagnostics</h3>
+                    <p className="text-[11px] text-slate-400 font-bold uppercase mb-4">Automated baseline target cross-checking</p>
+                    <DelayTracker title="Civil Works" tasks={civilWk} discipline="Civil" l2Schedule={db.l2Schedule} />
+                    <DelayTracker title="Mechanical Works" tasks={mechWk} discipline="Mechanical" l2Schedule={db.l2Schedule} />
+                    <DelayTracker title="Electrical Works" tasks={elecWk} discipline="Electrical" l2Schedule={db.l2Schedule} />
+                  </div>
                 </div>
               )}
 
+              {/* TAB: L2 SCHEDULE */}
               {tab === "L2 SCHEDULE" && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden fade-in">
                   <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
@@ -505,6 +532,7 @@
                 </div>
               )}
 
+              {/* TAB: EXECUTION */}
               {tab === "EXECUTION" && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden fade-in">
                   <div className="p-4 bg-slate-50 border-b flex flex-wrap justify-between items-center gap-4">
@@ -542,7 +570,7 @@
                             <td className="p-2"><input type="number" value={t.next} onChange={e => handleTaskChange(t.id, "next", e.target.value, col)} className="w-full bg-slate-100 text-center rounded p-2 text-sm font-bold outline-none" /></td>
                             <td className="p-2"><textarea rows="1" value={t.hindrance} onChange={e => handleTaskChange(t.id, "hindrance", e.target.value, col)} className="w-full bg-amber-50/40 border border-slate-200 rounded p-2 text-xs outline-none font-medium"></textarea></td>
                             <td className="p-2"><textarea rows="1" value={t.tplRemarks} onChange={e => handleTaskChange(t.id, "tplRemarks", e.target.value, col)} className="w-full bg-slate-50 border border-slate-200 rounded p-2 text-xs outline-none font-medium"></textarea></td>
-                            <td className="p-2"><textarea rows="1" value={t.ntpcDirectives} onChange={e => handleTaskChange(t.id, "ntpcDirectives", e.target.value, col)} className="w-full bg-rose-50/30 border border-slate-200 rounded p-2 text-xs font-bold text-rose-950 outline-none"></textarea></td>
+                            <td className="p-2"><textarea rows="1" value={t.ntpcDirectives} onChange={e => handleTaskChange(t.id, "ntpcDirectives", e.target.value, col)} className="w-full bg-rose-50/30 border border-rose-200 rounded p-2 text-xs font-bold text-rose-950 outline-none"></textarea></td>
                             <td className="p-2 text-center"><button onClick={()=>deleteIndividual(col, t.id)} className="text-rose-500 hover:text-rose-700 text-lg">🗑️</button></td>
                           </tr>
                         );
@@ -552,6 +580,7 @@
                 </div>
               )}
 
+              {/* TAB: DRAWINGS */}
               {tab === "DRAWINGS" && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden fade-in">
                   <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
@@ -583,6 +612,7 @@
                 </div>
               )}
 
+              {/* TAB: HSE & QA */}
               {tab === "HSE & QA" && (
                 <div className="space-y-6 fade-in">
                   <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
@@ -609,7 +639,7 @@
                           ))}
                         </tbody>
                       </table>
-                      <div className="p-3 bg-slate-50 border-t"><button onClick={() => handleAddRow("Safety")} className="text-xs font-black text-ntpc-orange hover:underline uppercase">+ Add Safety Log</button></div>
+                      <div className="p-3 bg-slate-50 border-t"><button onClick={() => setDb(p=>({...p, safetyLogs:[{id:"SAF-"+Date.now(), weekNo, category:"Unsafe Condition", desc:"", status:"Open", createdAt: Date.now()}, ...p.safetyLogs]}))} className="text-xs font-black text-ntpc-orange hover:underline uppercase">+ Add Safety Log</button></div>
                     </div>
 
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -628,12 +658,13 @@
                           ))}
                         </tbody>
                       </table>
-                      <div className="p-3 bg-slate-50 border-t"><button onClick={() => handleAddRow("Quality")} className="text-xs font-black text-blue-600 hover:underline uppercase">+ Add Quality NCR</button></div>
+                      <div className="p-3 bg-slate-50 border-t"><button onClick={() => setDb(p=>({...p, qualityLogs:[{id:"QAL-"+Date.now(), weekNo, category:"Civil NCR", desc:"", status:"Open", createdAt: Date.now()}, ...p.qualityLogs]}))} className="text-xs font-black text-blue-600 hover:underline uppercase">+ Add Quality NCR</button></div>
                     </div>
                   </div>
                 </div>
               )}
 
+              {/* TAB: ACTIONS */}
               {tab === "ACTIONS" && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden fade-in">
                   <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
@@ -653,7 +684,7 @@
                           <td className="p-2"><input type="text" value={a.desc} onChange={e => handleTaskChange(a.id, "desc", e.target.value, "actions")} className="w-full bg-transparent border-b p-2 font-bold text-sm outline-none" /></td>
                           <td className="p-2"><input type="text" value={a.responsibility} onChange={e => handleTaskChange(a.id, "responsibility", e.target.value, "actions")} className="w-full bg-slate-100 font-bold p-2 rounded text-xs outline-none" /></td>
                           <td className="p-2 text-center"><input type="date" value={a.targetDate} onChange={e => handleTaskChange(a.id, "targetDate", e.target.value, "actions")} className="bg-slate-100 p-2 rounded text-xs font-bold outline-none" /></td>
-                          <td className="p-2 text-center"><button onClick={() => handleTaskChange(a.id, "status", a.status === 'Pending' ? 'In Progress' : a.status === 'In Progress' ? 'Completed' : 'Pending', "actions")} className={`px-3 py-1.5 rounded text-xs font-black uppercase w-full shadow-sm ${a.status === 'Completed' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : a.status === 'In Progress' ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}`}>{a.status}</button></td>
+                          <td className="p-2 text-center"><button onClick={() => { const next = a.status === 'Pending' ? 'In Progress' : a.status === 'In Progress' ? 'Completed' : 'Pending'; handleTaskChange(a.id, "status", next, "actions"); }} className={`px-3 py-1.5 rounded text-xs font-black uppercase w-full shadow-sm ${a.status === 'Completed' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : a.status === 'In Progress' ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-rose-100 text-rose-800 border border-rose-300'}`}>{a.status}</button></td>
                           <td className="p-2"><textarea rows="1" value={a.ntpcRemarks} onChange={e => handleTaskChange(a.id, "ntpcRemarks", e.target.value, "actions")} className="w-full bg-rose-50/30 border border-slate-200 rounded p-2 text-xs font-bold text-rose-950 outline-none" /></td>
                           <td className="p-2 text-center"><button onClick={()=>deleteIndividual("actions", a.id)} className="text-rose-500 hover:text-rose-700 text-lg">🗑️</button></td>
                         </tr>
@@ -704,7 +735,9 @@
             </div>
           )}
 
-          {/* PRINTABLE A4 LANDSCAPE MOM (NO LOGOS) */}
+          {/* ========================================================= */}
+          {/* PRINTABLE MINUTES OF MEETING (MoM) — CLEAN NO LOGO FORMAT */}
+          {/* ========================================================= */}
           <div id="printable-mom" className="hidden print:block font-sans bg-white text-black">
             
             <div className="print-header-box">
@@ -714,13 +747,13 @@
             </div>
 
             <div className="flex justify-between items-end mb-3 pb-1 border-b border-black">
-              <h2 className="text-[12px] font-black uppercase tracking-wider">Minutes of Weekly Review Meeting (WRM) — Review Week #{weekNo}</h2>
+              <h2 className="text-[12px] font-black uppercase tracking-wider">Minutes of Weekly Review Meeting (WRM) — Week #{weekNo}</h2>
               <div className="text-[9px] font-bold text-right uppercase">REF: NTPC/NSTPP-II/WRM/WK-{weekNo}<br />Date: {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
             </div>
 
-            <h3 className="text-[10px] font-bold uppercase mb-1">1. Meeting Participants & Site Operational Data</h3>
+            <h3 className="text-[10px] font-bold uppercase mb-1">1. Meeting Participants & Site Performance Index</h3>
             <table className="mb-4">
-              <thead><tr><th className="w-[35%]">Employer Representatives (NTPC)</th><th className="w-[35%]">Contractor Representatives (M/s TPL)</th><th className="w-[30%] text-center">Site Operational Metrics</th></tr></thead>
+              <thead><tr><th className="w-[35%]">Employer Representatives (NTPC)</th><th className="w-[35%]">Contractor Representatives (M/s TPL)</th><th className="w-[30%] text-center">Site Metrics</th></tr></thead>
               <tbody>
                 <tr>
                   <td className="align-top"><ul className="list-disc pl-4 m-0">{(currentMeta.ntpcAttendees || []).filter(a => a.name).map((a, i) => <li key={i}><strong>{a.name}</strong> — {a.desig}</li>)}</ul></td>
