@@ -5,15 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Nabinagar STPP Stage-II — Projector WRM Portal</title>
   
-  <!-- Tailwind & React -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  
-  <!-- SheetJS for Excel Export -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
-  
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
   <script>
@@ -32,7 +28,7 @@
     .sticky-th { position: sticky; top: 0; z-index: 20; }
     .sticky-th-sub { position: sticky; top: 38px; z-index: 19; }
 
-    /* A4 LANDSCAPE PRINT CSS */
+    /* CLEAN A4 LANDSCAPE PRINT CSS (NO LOGOS) */
     @media print {
       body { background: white !important; font-family: 'Arial', sans-serif; -webkit-print-color-adjust: exact; overflow: visible; }
       .no-print { display: none !important; }
@@ -42,10 +38,10 @@
       tr { page-break-inside: avoid; page-break-after: auto; }
       th { background-color: #f1f5f9 !important; color: #000 !important; font-weight: bold; border: 1px solid #94a3b8; padding: 6px; font-size: 10px; }
       td { border: 1px solid #94a3b8; padding: 6px; font-size: 9.5px; }
-      .print-header-box { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #0066b3; padding-bottom: 8px; margin-bottom: 10px; }
-      .print-title { color: #0066b3; font-size: 22px; font-weight: 900; letter-spacing: -0.5px; margin: 0; }
+      .print-header-box { text-align: center; border-bottom: 2px solid #0066b3; padding-bottom: 6px; margin-bottom: 10px; }
+      .print-title { color: #0066b3; font-size: 24px; font-weight: 900; letter-spacing: -0.5px; margin: 0; text-transform: uppercase;}
       .print-subtitle { font-size: 11px; font-style: italic; font-weight: bold; margin-top: 2px; color: #334155; }
-      .header-gradient-line { height: 2px; background: linear-gradient(to right, #0066b3 0%, #85b86b 50%, #ea580c 100%); margin: 4px 0; }
+      .header-gradient-line { height: 2px; background: linear-gradient(to right, #0066b3 0%, #85b86b 50%, #ea580c 100%); margin: 4px auto; width: 80%; }
     }
   </style>
 </head>
@@ -55,15 +51,19 @@
   <script type="text/babel">
     const { useState, useEffect, useMemo } = React;
 
-    const STORAGE_KEY = "ntpc_wrm_projector_v4";
+    const STORAGE_KEY = "ntpc_wrm_projector_v5";
 
-    const NtpcVectorLogo = ({ className = "h-14 w-auto" }) => (
-      <svg className={className} viewBox="0 0 160 52" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="2" y="2" width="156" height="48" rx="8" stroke="#0066b3" strokeWidth="3" fill="#ffffff" />
-        <text x="80" y="23" fill="#0066b3" fontSize="16" fontWeight="900" fontFamily="Arial" textAnchor="middle">एनटीपीसी</text>
-        <text x="80" y="42" fill="#0066b3" fontSize="18" fontWeight="900" fontFamily="Arial" textAnchor="middle" letterSpacing="2">NTPC</text>
-      </svg>
-    );
+    const cleanDate = (val) => {
+      if (!val) return "";
+      val = val.trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+      const parts = val.split(/[-/.]/);
+      if (parts.length === 3) {
+        if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+      return val;
+    };
 
     const DEFAULT_DB = {
       currentWeek: 35,
@@ -79,20 +79,16 @@
     };
 
     function App() {
-      // Core Database State
       const [db, setDbState] = useState(() => {
         const local = localStorage.getItem(STORAGE_KEY);
         return local ? JSON.parse(local) : DEFAULT_DB;
       });
 
-      // Undo History State
       const [history, setHistory] = useState([]);
-
-      // Custom setState to handle history
       const setDb = (updater) => {
         setDbState(prev => {
           const nextState = typeof updater === 'function' ? updater(prev) : updater;
-          setHistory(h => [...h.slice(-14), prev]); // Keep last 15 states
+          setHistory(h => [...h.slice(-14), prev]);
           return nextState;
         });
       };
@@ -108,7 +104,7 @@
 
       const revertTwoHours = () => {
         if(!confirm("WARNING: This will delete ALL rows added within the last 2 hours. Proceed?")) return;
-        const threshold = Date.now() - (2 * 60 * 60 * 1000); // 2 hours ago
+        const threshold = Date.now() - (2 * 60 * 60 * 1000); 
         setDb(prev => {
           const roll = (arr) => arr.filter(item => !item.createdAt || item.createdAt <= threshold);
           return {
@@ -120,16 +116,21 @@
         alert("Recent additions wiped successfully.");
       };
 
-      // UI States
       const [tab, setTab] = useState("DASHBOARD");
       const [weekNo, setWeekNo] = useState(db.currentWeek || 35);
       const [activeDiscipline, setActiveDiscipline] = useState("Civil");
       
-      // Multi-Select State
       const [selectedIds, setSelectedIds] = useState([]);
+      const [showPasteModal, setShowPasteModal] = useState(false);
+      const [pasteType, setPasteType] = useState("L2");
+      const [pasteText, setPasteText] = useState("");
+
+      // Print Configuration States
+      const [showPrintModal, setShowPrintModal] = useState(false);
+      const [printIncludeDashboard, setPrintIncludeDashboard] = useState(true);
 
       useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); }, [db]);
-      useEffect(() => { setSelectedIds([]); }, [tab, activeDiscipline]); // Clear selection on tab change
+      useEffect(() => { setSelectedIds([]); }, [tab, activeDiscipline]);
 
       const currentMeta = db.weekMeta[weekNo] || { manpower: 0, trained: 0, ntpcAttendees: [], tplAttendees: [] };
       const activeTasks = (activeDiscipline === "Civil" ? db.civilExecution : activeDiscipline === "Mechanical" ? db.mechExecution : db.elecExecution).filter(t => t.weekNo === weekNo);
@@ -148,13 +149,36 @@
         setDb(prev => ({ ...prev, [collectionName]: prev[collectionName].filter(item => item.id !== id) }));
       };
 
-      // Export to Excel Function using SheetJS
+      const exportBackup = () => {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db, null, 2));
+        const a = document.createElement('a');
+        a.setAttribute("href", dataStr);
+        a.setAttribute("download", `NTPC_WRM_Data_Wk${weekNo}.json`);
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      };
+
+      const importBackup = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            const parsed = JSON.parse(event.target.result);
+            if (parsed.weekMeta) {
+              setDbState(parsed);
+              setWeekNo(parsed.currentWeek || 35);
+              alert("Data restored successfully");
+            } else { alert("Invalid backup file format"); }
+          } catch(err) { alert("Error parsing file: " + err.message); }
+        };
+        reader.readAsText(file);
+      };
+
       const exportToExcel = () => {
         const wb = XLSX.utils.book_new();
-        
-        // Helper to format data
         const formatExec = (arr) => arr.filter(t => t.weekNo === weekNo).map(t => ({ "L2 Ref": t.l2Ref, "Task": t.taskName, "Unit": t.unit, "Plan": t.plan, "Actual": t.act, "Variance": t.act - t.plan, "Cum. Backlog": t.cumBacklog, "Next Plan": t.next, "Hindrance": t.hindrance, "TPL Remarks": t.tplRemarks, "NTPC Directives": t.ntpcDirectives }));
-        
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatExec(db.civilExecution)), "Civil Works");
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatExec(db.mechExecution)), "Mechanical Works");
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(formatExec(db.elecExecution)), "Electrical Works");
@@ -164,11 +188,42 @@
         
         const acts = db.actions.filter(a => a.weekNo === weekNo).map(a => ({ "Category": a.category, "Description": a.desc, "Responsibility": a.responsibility, "Target": a.targetDate, "Status": a.status, "NTPC Remarks": a.ntpcRemarks }));
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(acts), "Action Tracker");
-
         XLSX.writeFile(wb, `NTPC_WRM_Week_${weekNo}_Export.xlsx`);
       };
 
-      // Data Handlers
+      const executeExcelImport = () => {
+        if (!pasteText.trim()) return;
+        const rows = pasteText.trim().split("\n").map(r => r.split("\t"));
+        const ts = Date.now();
+
+        if (pasteType === "L2") {
+          const newFronts = rows.map((r, i) => ({
+            id: "L2-" + ts + i, discipline: (r[0] || "Civil").trim(), desc: (r[1] || "").trim(), l2Start: cleanDate(r[2]), actStart: cleanDate(r[3]), l2End: cleanDate(r[4]), actEnd: cleanDate(r[5]), createdAt: ts
+          })).filter(item => item.desc);
+          setDb(prev => ({ ...prev, l2Schedule: [...newFronts, ...prev.l2Schedule] }));
+        } else if (pasteType === "Drawings") {
+          const newDwgs = rows.map((r, i) => ({
+            id: "DW-" + ts + i, weekNo, l2Ref: (r[0] || "").trim(), discipline: (r[1] || "Civil").trim(), drawingNo: (r[2] || "").trim(), desc: (r[3] || "").trim(), priority: (r[4] || "Moderate").trim(), targetDate: cleanDate(r[5]), expectedDate: cleanDate(r[6]), status: (r[7] || "Pending").trim(), frontImpact: (r[8] || "").trim(), remarks: (r[9] || "").trim(), createdAt: ts
+          })).filter(item => item.drawingNo);
+          setDb(prev => ({ ...prev, drawings: [...newDwgs, ...prev.drawings] }));
+        } else if (pasteType === "Actions") {
+          const newActs = rows.map((r, i) => ({
+            id: "ACT-" + ts + i, weekNo, category: (r[0] || "Execution").trim(), desc: (r[1] || "").trim(), responsibility: (r[2] || "TPL").trim(), targetDate: cleanDate(r[3]), revisedDate: cleanDate(r[4]), status: (r[5] || "Pending").trim(), ntpcRemarks: (r[6] || "").trim(), createdAt: ts
+          })).filter(item => item.desc);
+          setDb(prev => ({ ...prev, actions: [...newActs, ...prev.actions] }));
+        } else {
+          const collection = activeDiscipline === "Civil" ? "civilExecution" : activeDiscipline === "Mechanical" ? "mechExecution" : "elecExecution";
+          const prefix = activeDiscipline === "Civil" ? "CV-" : activeDiscipline === "Mechanical" ? "MC-" : "EL-";
+          const newTasks = rows.map((r, i) => ({
+            id: prefix + ts + i, weekNo, l2Ref: (r[0] || "").trim(), taskName: (r[1] || "").trim(), unit: (r[2] || (activeDiscipline === "Civil" ? "m³" : "MT")).trim(), plan: parseFloat(r[3]) || 0, act: parseFloat(r[4]) || 0, next: parseFloat(r[5]) || 0, cumBacklog: parseFloat(r[6]) || 0, hindrance: (r[7] || "").trim(), tplRemarks: (r[8] || "").trim(), ntpcDirectives: (r[9] || "").trim(), milestone: "In Progress", createdAt: ts
+          })).filter(item => item.taskName);
+          setDb(prev => ({ ...prev, [collection]: [...newTasks, ...prev[collection]] }));
+        }
+
+        setPasteText("");
+        setShowPasteModal(false);
+      };
+
       const handleTaskChange = (taskId, field, val, collection) => {
         setDb(prev => ({
           ...prev, [collection]: prev[collection].map(item => {
@@ -186,21 +241,17 @@
 
       const handleAddRow = (type) => {
         const ts = Date.now();
-        if (type === "L2") {
-          setDb(prev => ({ ...prev, l2Schedule: [{ id: "L2-"+ts, discipline: "Civil", desc: "", l2Start: "", actStart: "", l2End: "", actEnd: "", createdAt: ts }, ...prev.l2Schedule] }));
-        } else if (type === "Team") {
-          setDb(prev => ({ ...prev, teamMaster: [{ id: "TM-"+ts, empId: "", name: "", desig: "", dept: "", org: "NTPC", createdAt: ts }, ...prev.teamMaster] }));
-        } else if (type === "Drawings") {
-          setDb(prev => ({ ...prev, drawings: [{ id: "DW-"+ts, weekNo, l2Ref: "", discipline: "Civil", drawingNo: "", desc: "", priority: "Moderate", targetDate: "", expectedDate: "", status: "Pending", frontImpact: "", remarks: "", createdAt: ts }, ...prev.drawings] }));
-        } else if (type === "Actions") {
-          setDb(prev => ({ ...prev, actions: [{ id: "ACT-"+ts, weekNo, category: "Execution", desc: "", responsibility: "TPL", targetDate: "", revisedDate: "", status: "Pending", ntpcRemarks: "", createdAt: ts }, ...prev.actions] }));
-        } else {
+        if (type === "L2") { setDb(prev => ({ ...prev, l2Schedule: [{ id: "L2-"+ts, discipline: "Civil", desc: "", l2Start: "", actStart: "", l2End: "", actEnd: "", createdAt: ts }, ...prev.l2Schedule] })); } 
+        else if (type === "Team") { setDb(prev => ({ ...prev, teamMaster: [{ id: "TM-"+ts, empId: "", name: "", desig: "", dept: "", org: "NTPC", createdAt: ts }, ...prev.teamMaster] })); } 
+        else if (type === "Drawings") { setDb(prev => ({ ...prev, drawings: [{ id: "DW-"+ts, weekNo, l2Ref: "", discipline: "Civil", drawingNo: "", desc: "", priority: "Moderate", targetDate: "", expectedDate: "", status: "Pending", frontImpact: "", remarks: "", createdAt: ts }, ...prev.drawings] })); } 
+        else if (type === "Actions") { setDb(prev => ({ ...prev, actions: [{ id: "ACT-"+ts, weekNo, category: "Execution", desc: "", responsibility: "TPL", targetDate: "", revisedDate: "", status: "Pending", ntpcRemarks: "", createdAt: ts }, ...prev.actions] })); } 
+        else {
           const col = type === "Civil" ? "civilExecution" : type === "Mechanical" ? "mechExecution" : "elecExecution";
-          setDb(prev => ({ ...prev, [col]: [{ id: "TSK-"+ts, weekNo, l2Ref: "", taskName: "", unit: type==="Civil"?"m³":type==="Mechanical"?"MT":"m", plan: 0, act: 0, next: 0, cumBacklog: 0, prevBacklog: 0, hindrance: "", tplRemarks: "", ntpcDirectives: "", milestone: "In Progress", createdAt: ts }, ...prev[col]] }));
+          const prefix = type === "Civil" ? "CV-" : type === "Mechanical" ? "MC-" : "EL-";
+          setDb(prev => ({ ...prev, [col]: [{ id: prefix+ts, weekNo, l2Ref: "", taskName: "", unit: type==="Civil"?"m³":type==="Mechanical"?"MT":"m", plan: 0, act: 0, next: 0, cumBacklog: 0, prevBacklog: 0, hindrance: "", tplRemarks: "", ntpcDirectives: "", milestone: "In Progress", createdAt: ts }, ...prev[col]] }));
         }
       };
 
-      // Attendees Dropdown Grouper
       const renderTeamDropdown = (orgFilter) => {
         const orgTeam = db.teamMaster.filter(t => t.org === orgFilter && t.name);
         const topLevel = orgTeam.filter(t => { const d = (t.desig||"").toUpperCase(); return d.includes('HOP') || d.includes('GM PROJECT'); });
@@ -220,10 +271,26 @@
         );
       };
 
+      // Dashboard KPI Calculations
+      const civilWk = db.civilExecution.filter(t => t.weekNo === weekNo);
+      const mechWk = db.mechExecution.filter(t => t.weekNo === weekNo);
+      const elecWk = db.elecExecution.filter(t => t.weekNo === weekNo);
+      
+      const getHitCount = (arr) => arr.filter(t => parseFloat(t.act) >= parseFloat(t.plan) && parseFloat(t.plan) > 0).length;
+      const calcProgress = (tasks) => {
+        if (!tasks.length) return 0;
+        const p = tasks.reduce((acc, t) => acc + (parseFloat(t.plan) || 0), 0);
+        const a = tasks.reduce((acc, t) => acc + (parseFloat(t.act) || 0), 0);
+        return p === 0 ? 0 : Math.min(100, Math.round((a / p) * 100));
+      };
+
+      const pendingDwgs = db.drawings.filter(d => d.weekNo === weekNo && d.status !== "Cat-1 Approved").length;
+      const openActs = db.actions.filter(a => a.weekNo === weekNo && a.status !== "Completed").length;
+      const openHse = db.safetyLogs.filter(s => s.weekNo === weekNo && s.status === "Open" && s.category === "Unsafe Condition").length;
+
       return (
         <div className="flex h-screen w-screen bg-slate-50 overflow-hidden font-sans text-sm">
           
-          {/* SIDEBAR NAVIGATION */}
           <aside className="w-64 bg-ntpc-navy text-white flex flex-col h-screen shadow-2xl flex-shrink-0 z-50 no-print">
             <div className="p-4 flex items-center gap-3 border-b border-white/10">
               <div className="w-10 h-10 bg-ntpc-orange text-white rounded-xl flex items-center justify-center font-black text-2xl shadow-md border border-white/20">N</div>
@@ -251,13 +318,17 @@
               <div className="text-[10px] font-black uppercase text-slate-400 text-center tracking-widest mb-1">Data & Safety Tools</div>
               <button onClick={handleUndo} className="w-full bg-slate-700 hover:bg-slate-600 text-white py-2 rounded text-xs font-black uppercase flex items-center justify-center gap-2">↩ Undo Last Action</button>
               <button onClick={revertTwoHours} className="w-full bg-rose-900/50 hover:bg-rose-800 text-rose-300 py-2 rounded text-[10px] font-black uppercase border border-rose-800/50">⏰ Wipe Last 2 Hours</button>
+              <div className="flex gap-2 mt-2 pt-2 border-t border-white/10">
+                <button onClick={exportBackup} title="Export database to JSON file" className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded text-[9px] font-black uppercase">Export JSON</button>
+                <label className="flex-1 bg-white/10 hover:bg-white/20 text-white py-1.5 rounded text-[9px] font-black uppercase text-center cursor-pointer">
+                  Import<input type="file" accept=".json" onChange={importBackup} className="hidden" />
+                </label>
+              </div>
             </div>
           </aside>
 
-          {/* MAIN WORKSPACE */}
           <div className="flex-1 flex flex-col h-full overflow-hidden">
             
-            {/* TOP BAR */}
             <header className="bg-white border-b border-slate-200 px-6 py-3.5 flex items-center justify-between z-30 shadow-sm no-print">
               <div className="flex items-center gap-4">
                 <span className="text-sm font-black text-ntpc-blue uppercase tracking-wider">Review Week:</span>
@@ -267,22 +338,34 @@
                 <button onClick={() => {
                   const nx = parseInt(prompt("Enter New Week Number:", weekNo + 1));
                   if(nx && !db.weeks.includes(nx)) {
-                    setDb(prev => ({ ...prev, currentWeek: nx, weeks: [nx, ...prev.weeks], weekMeta: { ...prev.weekMeta, [nx]: prev.weekMeta[weekNo] } }));
+                    setDb(prev => {
+                      const roll = (arr) => arr.filter(t => t.weekNo === weekNo && t.milestone !== "Completed").map(t => ({ ...t, id: t.id.split('-')[0]+"-"+Date.now()+Math.floor(Math.random()*100), weekNo: nx, plan: parseFloat(t.next)||0, act: 0, next: 0, cumBacklog: Math.max(0, (parseFloat(t.cumBacklog)||0) + ((parseFloat(t.plan)||0)-(parseFloat(t.act)||0))), prevBacklog: Math.max(0, (parseFloat(t.cumBacklog)||0) + ((parseFloat(t.plan)||0)-(parseFloat(t.act)||0))), hindrance: "", tplRemarks: "", ntpcDirectives: "", createdAt: Date.now() }));
+                      const rollD = prev.drawings.filter(d => d.weekNo === weekNo && d.status !== "Cat-1 Approved").map(d => ({...d, id: "DW-"+Date.now()+Math.floor(Math.random()*100), weekNo: nx, createdAt: Date.now()}));
+                      const rollA = prev.actions.filter(a => a.weekNo === weekNo && a.status !== "Completed").map(a => ({...a, id: "ACT-"+Date.now()+Math.floor(Math.random()*100), weekNo: nx, createdAt: Date.now()}));
+                      
+                      return {
+                        ...prev, currentWeek: nx, weeks: [nx, ...prev.weeks],
+                        weekMeta: { ...prev.weekMeta, [nx]: prev.weekMeta[weekNo] },
+                        civilExecution: [...roll(prev.civilExecution), ...prev.civilExecution],
+                        mechExecution: [...roll(prev.mechExecution), ...prev.mechExecution],
+                        elecExecution: [...roll(prev.elecExecution), ...prev.elecExecution],
+                        drawings: [...rollD, ...prev.drawings],
+                        actions: [...rollA, ...prev.actions]
+                      };
+                    });
                     setWeekNo(nx);
                   }
-                }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-xs font-black uppercase shadow">+ New Wk</button>
+                }} className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-xs font-black uppercase shadow">+ Initialize New Week</button>
               </div>
 
               <div className="flex items-center gap-3">
                 <button onClick={exportToExcel} className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-4 py-2 rounded-lg text-xs font-black uppercase hover:bg-emerald-100 transition flex items-center gap-2">📥 Export Excel</button>
-                <button onClick={() => window.print()} className="bg-ntpc-blue hover:bg-slate-900 text-white px-5 py-2 rounded-lg text-xs font-extrabold uppercase shadow">🖨️ Print MoM</button>
+                <button onClick={() => setShowPrintModal(true)} className="bg-ntpc-blue hover:bg-slate-900 text-white px-5 py-2 rounded-lg text-xs font-extrabold uppercase shadow">🖨️ Print MoM</button>
               </div>
             </header>
 
-            {/* CONTENT TABS */}
             <main className="flex-1 overflow-y-auto p-6 custom-scroll no-print">
               
-              {/* BULK ACTION BAR (FLOATING) */}
               {selectedIds.length > 0 && (
                 <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-rose-600 text-white px-6 py-3 rounded-full shadow-2xl z-50 flex items-center gap-4 animate-fade-in">
                   <span className="font-bold text-sm">{selectedIds.length} Rows Selected</span>
@@ -352,15 +435,38 @@
                       </div>
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <ProgressRing pct={calcProgress(civilWk)} color="text-blue-600" label="Civil Works Target" hitCount={getHitCount(civilWk)} totalCount={civilWk.length} />
+                    <ProgressRing pct={calcProgress(mechWk)} color="text-amber-500" label="Mech Works Target" hitCount={getHitCount(mechWk)} totalCount={mechWk.length} />
+                    <ProgressRing pct={calcProgress(elecWk)} color="text-emerald-500" label="Elec Works Target" hitCount={getHitCount(elecWk)} totalCount={elecWk.length} />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pending Drawings</span><div className="text-3xl font-black text-amber-500 mt-1">{pendingDwgs}</div></div>
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Unresolved Bottlenecks</span><div className="text-3xl font-black text-rose-600 mt-1">{openActs}</div></div>
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Open Unsafe Conditions</span><div className="text-3xl font-black text-ntpc-orange mt-1">{openHse}</div></div>
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Site Manpower Deployed</span><div className="text-3xl font-black text-blue-900 mt-1">{currentMeta.manpower}</div></div>
+                  </div>
+
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                    <h3 className="text-sm font-black text-ntpc-blue uppercase tracking-wider mb-2">Contract L2 Schedule Variance & Obstruction Diagnostics</h3>
+                    <p className="text-[11px] text-slate-400 font-bold uppercase mb-4">Automated baseline target cross-checking</p>
+                    <DelayTracker title="Civil Works" tasks={civilWk} discipline="Civil" l2Schedule={db.l2Schedule} />
+                    <DelayTracker title="Mechanical Works" tasks={mechWk} discipline="Mechanical" l2Schedule={db.l2Schedule} />
+                    <DelayTracker title="Electrical Works" tasks={elecWk} discipline="Electrical" l2Schedule={db.l2Schedule} />
+                  </div>
                 </div>
               )}
 
-              {/* TAB: L2 SCHEDULE */}
               {tab === "L2 SCHEDULE" && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden fade-in">
                   <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
                     <h2 className="text-sm font-black text-ntpc-blue uppercase tracking-wider">Level-2 Contract Master Schedule</h2>
-                    <button onClick={() => handleAddRow("L2")} className="bg-ntpc-orange text-white px-4 py-2 rounded-lg text-xs font-black uppercase">+ Add Work Front</button>
+                    <div className="flex gap-2">
+                      <button onClick={() => { setPasteType("L2"); setShowPasteModal(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-black uppercase shadow">📋 Paste from Excel</button>
+                      <button onClick={() => handleAddRow("L2")} className="bg-ntpc-orange text-white px-4 py-2 rounded-lg text-xs font-black uppercase">+ Add Work Front</button>
+                    </div>
                   </div>
                   <table className="w-full text-left text-sm">
                     <thead><tr className="bg-ntpc-navy text-white text-xs uppercase sticky-th"><th className="p-3 w-10 text-center"><input type="checkbox" onChange={e => toggleSelectAll(db.l2Schedule.map(x=>x.id))} checked={selectedIds.length===db.l2Schedule.length && db.l2Schedule.length>0}/></th><th className="p-3 w-[15%]">Discipline</th><th className="p-3 w-[35%]">L2 Front Description</th><th className="p-3 text-center">Baseline Start</th><th className="p-3 text-center">Actual Start</th><th className="p-3 text-center">Baseline Finish</th><th className="p-3 text-center">Actual Finish</th><th className="p-3 w-10"></th></tr></thead>
@@ -391,7 +497,10 @@
                         <button key={d} onClick={() => setActiveDiscipline(d)} className={`px-4 py-2 rounded text-xs font-black uppercase transition-all ${activeDiscipline === d ? "bg-ntpc-blue text-white shadow-md" : "text-slate-600 hover:bg-slate-300"}`}>{d} Works</button>
                       ))}
                     </div>
-                    <button onClick={() => handleAddRow(activeDiscipline)} className="bg-ntpc-orange text-white px-4 py-2 rounded-lg text-xs font-black uppercase shadow">+ Add Item</button>
+                    <div className="flex gap-2">
+                      <button onClick={() => { setPasteType("Execution"); setShowPasteModal(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-black uppercase shadow">📋 Paste from Excel</button>
+                      <button onClick={() => handleAddRow(activeDiscipline)} className="bg-ntpc-orange text-white px-4 py-2 rounded-lg text-xs font-black uppercase shadow">+ Add Item</button>
+                    </div>
                   </div>
 
                   <table className="w-full text-left text-sm">
@@ -432,7 +541,10 @@
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden fade-in">
                   <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
                     <h2 className="text-sm font-black text-ntpc-blue uppercase tracking-wider">Drawings & DCI Tracker</h2>
-                    <button onClick={() => handleAddRow("Drawings")} className="bg-ntpc-orange text-white px-4 py-2 rounded-lg text-xs font-black uppercase">+ Register Drawing</button>
+                    <div className="flex gap-2">
+                      <button onClick={() => { setPasteType("Drawings"); setShowPasteModal(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-black uppercase shadow">📋 Paste from Excel</button>
+                      <button onClick={() => handleAddRow("Drawings")} className="bg-ntpc-orange text-white px-4 py-2 rounded-lg text-xs font-black uppercase">+ Register Drawing</button>
+                    </div>
                   </div>
                   <table className="w-full text-left text-sm">
                     <thead><tr className="bg-ntpc-navy text-white text-xs uppercase sticky-th"><th className="p-3 w-10 text-center"><input type="checkbox" onChange={e => toggleSelectAll(db.drawings.filter(x=>x.weekNo===weekNo).map(x=>x.id))} checked={selectedIds.length===db.drawings.filter(x=>x.weekNo===weekNo).length && db.drawings.filter(x=>x.weekNo===weekNo).length>0}/></th><th className="p-3 w-[12%]">L2 Link</th><th className="p-3 w-[12%]">Drawing No</th><th className="p-3 w-[15%]">Description</th><th className="p-3 text-center w-[8%]">Priority</th><th className="p-3 text-center w-[10%]">Target Date</th><th className="p-3 text-center w-[10%]">Approval Status</th><th className="p-3 w-[12%]">Front Impact</th><th className="p-3 w-[12%]">Remarks</th><th className="p-3 w-10"></th></tr></thead>
@@ -484,7 +596,7 @@
                           ))}
                         </tbody>
                       </table>
-                      <div className="p-3 bg-slate-50 border-t"><button onClick={() => setDb(p=>({...p, safetyLogs:[{id:"SAF-"+Date.now(), weekNo, category:"Unsafe Condition", desc:"", status:"Open", createdAt: Date.now()}, ...p.safetyLogs]}))} className="text-xs font-black text-ntpc-orange hover:underline uppercase">+ Add Safety Log</button></div>
+                      <div className="p-3 bg-slate-50 border-t"><button onClick={() => handleAddRow("Safety")} className="text-xs font-black text-ntpc-orange hover:underline uppercase">+ Add Safety Log</button></div>
                     </div>
 
                     {/* QUALITY */}
@@ -504,7 +616,7 @@
                           ))}
                         </tbody>
                       </table>
-                      <div className="p-3 bg-slate-50 border-t"><button onClick={() => setDb(p=>({...p, qualityLogs:[{id:"QAL-"+Date.now(), weekNo, category:"Civil NCR", desc:"", status:"Open", createdAt: Date.now()}, ...p.qualityLogs]}))} className="text-xs font-black text-blue-600 hover:underline uppercase">+ Add Quality NCR</button></div>
+                      <div className="p-3 bg-slate-50 border-t"><button onClick={() => handleAddRow("Quality")} className="text-xs font-black text-blue-600 hover:underline uppercase">+ Add Quality NCR</button></div>
                     </div>
                   </div>
                 </div>
@@ -515,7 +627,10 @@
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden fade-in">
                   <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
                     <h2 className="text-sm font-black text-ntpc-blue uppercase tracking-wider">Critical Bottlenecks & Action Tracker</h2>
-                    <button onClick={() => handleAddRow("Actions")} className="bg-ntpc-orange text-white px-4 py-2 rounded-lg text-xs font-black uppercase">+ Add Action Item</button>
+                    <div className="flex gap-2">
+                      <button onClick={() => { setPasteType("Actions"); setShowPasteModal(true); }} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-black uppercase shadow">📋 Paste from Excel</button>
+                      <button onClick={() => handleAddRow("Actions")} className="bg-ntpc-orange text-white px-4 py-2 rounded-lg text-xs font-black uppercase">+ Add Action Item</button>
+                    </div>
                   </div>
                   <table className="w-full text-left text-sm">
                     <thead><tr className="bg-ntpc-navy text-white text-xs uppercase sticky-th"><th className="p-3 w-10 text-center"><input type="checkbox" onChange={e => toggleSelectAll(db.actions.filter(x=>x.weekNo===weekNo).map(x=>x.id))} checked={selectedIds.length===db.actions.filter(x=>x.weekNo===weekNo).length && db.actions.filter(x=>x.weekNo===weekNo).length>0}/></th><th className="p-3 w-[10%]">Category</th><th className="p-3 w-[26%]">Action Item Description</th><th className="p-3 w-[10%]">Resp</th><th className="p-3 text-center w-[10%]">Target Date</th><th className="p-3 text-center w-[10%]">Status</th><th className="p-3 w-[24%]">NTPC Remarks</th><th className="p-3 w-10"></th></tr></thead>
@@ -539,15 +654,59 @@
             </main>
           </div>
 
-          {/* PRINTABLE A4 LANDSCAPE MOM */}
-          <div id="printable-mom" className="hidden print:block font-sans bg-white text-black">
-            <div className="print-header-box">
-              <NtpcVectorLogo className="print-logo" />
-              <div className="text-right">
-                <h1 className="print-title">Nabinagar Super Thermal Power Project</h1>
-                <div className="header-gradient-line"></div>
-                <div className="print-subtitle">1980 MW (Stage-I:3X660) & 2400 MW (Stage-II:3X800) under construction</div>
+          {/* MODAL: EXCEL PASTE IMPORT */}
+          {showPasteModal && (
+            <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 fade-in">
+              <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+                <h3 className="text-sm font-black uppercase text-ntpc-blue">Paste {pasteType} Rows from Excel</h3>
+                <p className="text-[11px] text-slate-500 font-bold">
+                  {pasteType === "L2" ? "Columns: [Discipline | Description | L2 Start | Act Start | L2 End | Act End]" 
+                   : pasteType === "Drawings" ? "Columns: [L2 Ref | Discipline | Dwg No | Desc | Priority | Target | Expected | Status | Impact | Remarks]"
+                   : pasteType === "Actions" ? "Columns: [Category | Description | Resp | Target | Revised | Status | NTPC Remarks]"
+                   : "Columns: [L2 Ref | Task Name | Unit | Plan | Actual | Next Plan | Cum Backlog | Hindrance | TPL Remarks | NTPC Directives]"}
+                </p>
+                <textarea rows="8" value={pasteText} onChange={e => setPasteText(e.target.value)} placeholder="Click here and press Ctrl+V to paste tabular rows from Excel..." className="w-full border p-3 rounded text-xs font-mono bg-slate-50 outline-none focus:border-ntpc-blue"></textarea>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowPasteModal(false)} className="flex-1 bg-slate-100 py-2 rounded text-xs font-black uppercase hover:bg-slate-200">Cancel</button>
+                  <button onClick={executeExcelImport} className="flex-1 bg-blue-600 text-white py-2 rounded text-xs font-black uppercase shadow hover:bg-blue-700">Import Rows</button>
+                </div>
               </div>
+            </div>
+          )}
+
+          {/* MODAL: PRINT CONFIGURATION */}
+          {showPrintModal && (
+            <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 fade-in">
+              <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-5">
+                <h3 className="text-lg font-black uppercase text-ntpc-blue">Configure Print MoM</h3>
+                
+                <label className="flex items-center gap-3 text-sm font-bold cursor-pointer bg-slate-50 p-3 rounded-lg border border-slate-200">
+                  <input type="checkbox" checked={printIncludeDashboard} onChange={e => setPrintIncludeDashboard(e.target.checked)} className="w-5 h-5 accent-ntpc-blue" />
+                  Include Executive Dashboard Metrics
+                </label>
+
+                <div className="bg-rose-50 text-rose-800 border border-rose-200 p-4 rounded-lg text-xs font-bold leading-relaxed">
+                  <span className="text-rose-600 text-sm font-black mb-1 block">⚠️ CRITICAL REMINDER</span>
+                  All meeting data is stored locally in your browser cache. Before you close this window today, you MUST click <strong className="text-rose-900">Export JSON</strong> in the sidebar to save your progress!
+                </div>
+
+                <div className="flex gap-2">
+                  <button onClick={() => setShowPrintModal(false)} className="flex-1 bg-slate-100 py-2.5 rounded-lg text-xs font-black uppercase hover:bg-slate-200">Cancel</button>
+                  <button onClick={() => { setShowPrintModal(false); setTimeout(() => window.print(), 300); }} className="flex-1 bg-ntpc-blue text-white py-2.5 rounded-lg text-xs font-black uppercase shadow hover:bg-blue-800">Confirm & Print</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* PRINTABLE MINUTES OF MEETING (MoM) — CLEAN NO LOGO FORMAT */}
+          {/* ========================================================= */}
+          <div id="printable-mom" className="hidden print:block font-sans bg-white text-black">
+            
+            <div className="print-header-box">
+              <h1 className="print-title">Nabinagar Super Thermal Power Project</h1>
+              <div className="header-gradient-line"></div>
+              <div className="print-subtitle">1980 MW (Stage-I: 3X660) & 2400 MW (Stage-II: 3X800) under construction</div>
             </div>
 
             <div className="flex justify-between items-end mb-3 pb-1 border-b border-black">
@@ -556,7 +715,7 @@
             </div>
 
             <h3 className="text-[10px] font-bold uppercase mb-1">1. Meeting Participants & Site Performance Index</h3>
-            <table className="mb-3">
+            <table className="mb-4">
               <thead><tr><th className="w-[35%]">Employer Representatives (NTPC)</th><th className="w-[35%]">Contractor Representatives (M/s TPL)</th><th className="w-[30%] text-center">Site Metrics</th></tr></thead>
               <tbody>
                 <tr>
@@ -567,8 +726,27 @@
               </tbody>
             </table>
 
-            <h3 className="text-[10px] font-bold uppercase mb-1">2. Discipline Execution Performance</h3>
-            <table className="mb-3">
+            {printIncludeDashboard && (
+              <React.Fragment>
+                <h3 className="text-[10px] font-bold uppercase mb-1">2. Executive Dashboard Summary</h3>
+                <table className="mb-4">
+                  <thead><tr><th>Civil Targets Hit</th><th>Mech Targets Hit</th><th>Elec Targets Hit</th><th>Pending Drawings</th><th>Open Bottlenecks</th><th>Open HSE Issues</th></tr></thead>
+                  <tbody>
+                    <tr>
+                      <td className="text-center font-bold text-blue-900">{getHitCount(civilWk)} / {civilWk.length}</td>
+                      <td className="text-center font-bold text-amber-700">{getHitCount(mechWk)} / {mechWk.length}</td>
+                      <td className="text-center font-bold text-emerald-800">{getHitCount(elecWk)} / {elecWk.length}</td>
+                      <td className="text-center font-bold">{pendingDwgs}</td>
+                      <td className="text-center font-bold text-rose-700">{openActs}</td>
+                      <td className="text-center font-bold">{openHse}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </React.Fragment>
+            )}
+
+            <h3 className="text-[10px] font-bold uppercase mb-1">{printIncludeDashboard ? "3" : "2"}. Discipline Execution Performance</h3>
+            <table className="mb-4">
               <thead><tr><th className="w-[22%]">Work Front & Task</th><th className="text-center w-10">Plan</th><th className="text-center w-10">Actual</th><th className="text-center w-10">Var.</th><th className="text-center w-10">Cum. BL</th><th className="w-[18%]">Reported Hindrance</th><th className="w-[18%]">TPL Remarks</th><th className="w-[18%]">NTPC Directives</th></tr></thead>
               <tbody>
                 {[...db.civilExecution, ...db.mechExecution, ...db.elecExecution].filter(t => t.weekNo === weekNo).map((c, i) => (
@@ -584,7 +762,7 @@
               </tbody>
             </table>
 
-            <h3 className="text-[10px] font-bold uppercase mb-1">3. Priority Actions & Bottlenecks</h3>
+            <h3 className="text-[10px] font-bold uppercase mb-1">{printIncludeDashboard ? "4" : "3"}. Priority Actions & Bottlenecks</h3>
             <table className="mb-6">
               <thead><tr><th className="w-[30%]">Action Description</th><th className="w-[12%]">Resp</th><th className="text-center w-[12%]">Target</th><th className="text-center w-[12%]">Status</th><th className="w-[34%]">NTPC Review Directives</th></tr></thead>
               <tbody>
