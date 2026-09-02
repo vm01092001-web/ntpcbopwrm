@@ -3,60 +3,278 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NTPC Nabinagar STPP Stage-II — WRM</title>
+  <title>NTPC Nabinagar STPP Stage-II — High-Speed WRM</title>
   
-  <!-- Tailwind CSS & React Engine -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
   
   <script>
-    tailwind.config = { theme: { extend: { colors: { ntpc: { blue: '#0066b3', navy: '#06163a', orange: '#ea580c' } }, fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] } } } };
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ntpc: { blue: '#0066b3', navy: '#06163a', orange: '#ea580c' }
+          },
+          fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] }
+        }
+      }
+    };
   </script>
 
   <style>
-    body { background-color: #f8fafc; overflow: hidden; }
+    body { background-color: #f8fafc; }
     .fade-in { animation: fadeIn 0.15s ease-out forwards; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
     .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
     .custom-scroll::-webkit-scrollbar-track { background: transparent; }
     .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     .sticky-th { position: sticky; top: 0; z-index: 20; }
-    .sticky-th-sub { position: sticky; top: 28px; z-index: 19; }
-
-    @media print {
-      body { background: white !important; font-family: 'Times New Roman', serif; margin: 0; padding: 0; overflow: visible; }
-      .no-print { display: none !important; }
-      #printable-mom { display: block !important; width: 100% !important; color: black !important; }
-      @page { size: A4 landscape; margin: 10mm; }
-      table { border-collapse: collapse; width: 100%; page-break-inside: auto; }
-      tr { page-break-inside: avoid; page-break-after: auto; }
-      th { background-color: #f1f5f9 !important; color: #000 !important; font-weight: bold; border: 1px solid #94a3b8; padding: 4px 6px; font-size: 8.5px; }
-      td { border: 1px solid #94a3b8; padding: 4px 6px; font-size: 8px; }
-      .ntpc-header-text { font-family: 'Arial', sans-serif; font-weight: 900; font-size: 24px; color: #0066b3; margin-bottom: -4px; letter-spacing: -0.5px; }
-      .ntpc-header-sub { font-family: 'Arial', sans-serif; font-style: italic; font-weight: bold; font-size: 11px; color: #000; }
-      .header-gradient-line { height: 2px; background: linear-gradient(to right, rgba(0,0,0,0) 0%, rgba(133,184,107,1) 50%, rgba(0,0,0,0) 100%); margin-top: 4px; margin-bottom: 4px; }
-    }
   </style>
 </head>
-<body class="text-slate-800 antialiased selection:bg-orange-500 selection:text-white">
+<body class="text-slate-800 antialiased">
   <div id="root"></div>
 
-  <!-- 1. Network API -->
-  <script src="./api.js"></script>
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
 
-  <!-- 2. UI Components -->
-  <script type="text/babel" src="./components/Sidebar.jsx"></script>
-  <script type="text/babel" src="./components/Dashboard.jsx"></script>
-  <script type="text/babel" src="./components/L2Schedule.jsx"></script>
-  <script type="text/babel" src="./components/Execution.jsx"></script>
-  <script type="text/babel" src="./components/Drawings.jsx"></script>
-  <script type="text/babel" src="./components/HseQa.jsx"></script>
-  <script type="text/babel" src="./components/Actions.jsx"></script>
+    // ==========================================
+    // CONFIGURATION: INSERT SUPABASE KEYS HERE
+    // ==========================================
+    const SUPABASE_URL = "https://dpgkxiqanmqwlmuasoas.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_TSjRkxxjYgyHeBiTHh6r9A_HotvKJcJ";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  <!-- 3. Master Application -->
-  <script type="text/babel" src="./App.jsx"></script>
+    function App() {
+      const [role, setRole] = useState("NTPC");
+      const [tab, setTab] = useState("EXECUTION");
+      const [weekNo, setWeekNo] = useState(35);
+      const [availableWeeks, setAvailableWeeks] = useState([35]);
+      const [activeDiscipline, setActiveDiscipline] = useState("civil_execution");
+      const [loading, setLoading] = useState(false);
+      const [statusMsg, setStatusMsg] = useState("");
+
+      // Live Entities
+      const [l2Schedule, setL2Schedule] = useState([]);
+      const [tasks, setTasks] = useState([]);
+      const [drawings, setDrawings] = useState([]);
+      const [actions, setActions] = useState([]);
+      const [safetyLogs, setSafetyLogs] = useState([]);
+
+      // Fetch All Data at Millisecond Latency
+      const loadData = useCallback(async () => {
+        setLoading(true);
+        setStatusMsg("Direct SQL Fetching...");
+
+        // 1. Fetch Master Weeks
+        const { data: weeks } = await supabase.from('week_master').select('week_no').order('week_no', { ascending: false });
+        if (weeks) setAvailableWeeks(weeks.map(w => w.week_no));
+
+        // 2. Fetch L2 Targets
+        const { data: l2 } = await supabase.from('l2_schedule').select('*');
+        if (l2) setL2Schedule(l2);
+
+        // 3. Fetch Active Execution Table
+        const { data: exec } = await supabase.from(activeDiscipline).select('*').eq('week_no', weekNo);
+        if (exec) setTasks(exec);
+
+        // 4. Fetch Drawings
+        const { data: dwg } = await supabase.from('drawings_status').select('*').eq('week_no', weekNo);
+        if (dwg) setDrawings(dwg);
+
+        // 5. Fetch Actions
+        const { data: acts } = await supabase.from('action_tracker').select('*').eq('week_no', weekNo);
+        if (acts) setActions(acts);
+
+        // 6. Fetch Safety
+        const { data: saf } = await supabase.from('safety_logs').select('*').eq('week_no', weekNo);
+        if (saf) setSafetyLogs(saf);
+
+        setLoading(false);
+        setStatusMsg("Live Connected (<50ms)");
+      }, [weekNo, activeDiscipline]);
+
+      useEffect(() => { loadData(); }, [loadData]);
+
+      // Instant Upsert Persistence
+      const saveTasks = async () => {
+        setLoading(true);
+        setStatusMsg("Committing SQL writes...");
+        const { error } = await supabase.from(activeDiscipline).upsert(tasks);
+        if (error) alert("Database write error: " + error.message);
+        else { setStatusMsg("Persisted Successfully!"); loadData(); }
+        setLoading(false);
+      };
+
+      // Native Storage Upload
+      const uploadImage = async (file) => {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        const { error } = await supabase.storage.from('wrm_evidence').upload(filePath, file);
+        if (error) { alert("Photo Storage Failed: " + error.message); return null; }
+
+        const { data } = supabase.storage.from('wrm_evidence').getPublicUrl(filePath);
+        return data.publicUrl;
+      };
+
+      // Dynamic Metrics Adjustment
+      const handleTaskChange = (idx, field, val) => {
+        const copy = [...tasks];
+        copy[idx][field] = val;
+        if (field === 'wk_plan' || field === 'wk_act') {
+          const plan = parseFloat(copy[idx].wk_plan) || 0;
+          const act = parseFloat(copy[idx].wk_act) || 0;
+          copy[idx].variance = act - plan;
+        }
+        setTasks(copy);
+      };
+
+      return (
+        <div className="flex h-screen w-screen bg-slate-100 overflow-hidden font-sans">
+          {/* Sidebar */}
+          <aside className="w-64 bg-ntpc-navy text-white flex flex-col h-screen shadow-2xl flex-shrink-0 z-50">
+            <div className="p-5 flex items-center gap-3 border-b border-white/10">
+              <div className="w-10 h-10 bg-ntpc-orange text-white rounded-xl flex items-center justify-center font-black text-xl shadow-md border border-white/20">N</div>
+              <div>
+                <h1 className="text-xs font-black uppercase tracking-wider leading-none">Nabinagar STPP</h1>
+                <p className="text-[9px] text-orange-400 font-bold uppercase tracking-widest mt-1">Supabase Ultra-Fast</p>
+              </div>
+            </div>
+            <nav className="flex-1 px-4 py-6 space-y-2">
+              {[
+                { id: "EXECUTION", icon: "🏗️", label: "Execution Tracking" },
+                { id: "DRAWINGS", icon: "📐", label: "Drawings & DCI" },
+                { id: "SAFETY", icon: "🛡️", label: "HSE Observations" }
+              ].map(t => (
+                <button key={t.id} onClick={() => setTab(t.id)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${tab === t.id ? "bg-ntpc-orange text-white shadow-lg" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}>
+                  <span className="text-lg">{t.icon}</span>{t.label}
+                </button>
+              ))}
+            </nav>
+            <div className="p-4 border-t border-white/10">
+              <span className="text-[10px] text-slate-400 uppercase font-black">Logged: {role}</span>
+            </div>
+          </aside>
+
+          {/* Master View Area */}
+          <div className="flex-1 flex flex-col h-full overflow-hidden">
+            <header className="bg-white border-b border-slate-200 px-8 py-3.5 flex items-center justify-between z-30 shadow-sm">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-black text-ntpc-blue uppercase tracking-wider">Review Week:</span>
+                <select value={weekNo} onChange={e => setWeekNo(parseInt(e.target.value))} className="bg-slate-100 font-black text-xs px-3 py-1.5 rounded-lg border border-slate-300 outline-none cursor-pointer">
+                  {availableWeeks.map(w => <option key={w} value={w}>Week {w}</option>)}
+                </select>
+                <span className="text-[10px] text-emerald-600 font-extrabold bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">{statusMsg}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setRole(role === "NTPC" ? "TPL" : "NTPC")} className="bg-slate-800 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-lg">Role: {role}</button>
+                <button onClick={() => window.print()} className="bg-ntpc-blue text-white text-[10px] font-black uppercase px-4 py-1.5 rounded-lg shadow">Print MoM</button>
+              </div>
+            </header>
+
+            <main className="flex-1 overflow-y-auto p-6 custom-scroll">
+              {tab === "EXECUTION" && (
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden fade-in">
+                  <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <div className="flex gap-2">
+                      {[
+                        { k: "civil_execution", l: "Civil Works" },
+                        { k: "mech_execution", l: "Mechanical" },
+                        { k: "elec_execution", l: "Electrical" }
+                      ].map(d => (
+                        <button key={d.k} onClick={() => setActiveDiscipline(d.k)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${activeDiscipline === d.k ? "bg-ntpc-blue text-white shadow" : "bg-white border text-slate-600"}`}>
+                          {d.l}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setTasks([...tasks, { week_no: weekNo, l2_reference: "", task_name: "", unit: "m³", wk_plan: 0, wk_act: 0, next_plan: 0, cum_backlog: 0, hindrance: "", tpl_remarks: "", ntpc_directives: "" }])} className="bg-ntpc-orange text-white text-xs font-black uppercase px-3 py-1.5 rounded-lg">
+                        + Add Task
+                      </button>
+                      <button onClick={saveTasks} className="bg-emerald-600 text-white text-xs font-black uppercase px-4 py-1.5 rounded-lg shadow">
+                        Save to Supabase
+                      </button>
+                    </div>
+                  </div>
+
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="bg-ntpc-navy text-white text-[9px] uppercase tracking-wider sticky-th">
+                        <th className="p-3">L2 Front</th>
+                        <th className="p-3">Task Name</th>
+                        <th className="p-3 text-center">Unit</th>
+                        <th className="p-3 text-center">Plan</th>
+                        <th className="p-3 text-center">Actual</th>
+                        <th className="p-3 text-center">Variance</th>
+                        <th className="p-3">Hindrance Detail</th>
+                        <th className="p-3">TPL Remarks</th>
+                        <th className="p-3">NTPC Directives</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {tasks.map((t, idx) => {
+                        const variance = (parseFloat(t.wk_act) || 0) - (parseFloat(t.wk_plan) || 0);
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="p-2"><input type="text" value={t.l2_reference || ""} onChange={e => handleTaskChange(idx, "l2_reference", e.target.value)} className="w-full bg-slate-100 rounded p-1 font-bold text-[10px] outline-none" placeholder="L2..." /></td>
+                            <td className="p-2"><input type="text" value={t.task_name || ""} onChange={e => handleTaskChange(idx, "task_name", e.target.value)} className="w-full bg-transparent border-b p-1 font-bold text-[11px] outline-none" placeholder="Task..." /></td>
+                            <td className="p-2 text-center"><input type="text" value={t.unit || ""} onChange={e => handleTaskChange(idx, "unit", e.target.value)} className="w-12 bg-slate-100 text-center rounded p-1" /></td>
+                            <td className="p-2 text-center"><input type="number" disabled={role === "TPL"} value={t.wk_plan || 0} onChange={e => handleTaskChange(idx, "wk_plan", e.target.value)} className="w-16 bg-blue-50 text-center font-bold text-ntpc-blue rounded p-1 border border-blue-200" /></td>
+                            <td className="p-2 text-center"><input type="number" value={t.wk_act || 0} onChange={e => handleTaskChange(idx, "wk_act", e.target.value)} className="w-16 bg-emerald-50 text-center font-bold text-emerald-800 rounded p-1 border border-emerald-200" /></td>
+                            <td className={`p-2 text-center font-black ${variance < 0 ? "text-rose-600" : "text-emerald-700"}`}>{variance > 0 ? `+${variance}` : variance}</td>
+                            <td className="p-2"><textarea rows="1" value={t.hindrance || ""} onChange={e => handleTaskChange(idx, "hindrance", e.target.value)} className="w-full border p-1 rounded text-[10px]" placeholder="Blockers..."></textarea></td>
+                            <td className="p-2"><textarea rows="1" disabled={role === "NTPC"} value={t.tpl_remarks || ""} onChange={e => handleTaskChange(idx, "tpl_remarks", e.target.value)} className="w-full border p-1 rounded text-[10px]"></textarea></td>
+                            <td className="p-2"><textarea rows="1" disabled={role === "TPL"} value={t.ntpc_directives || ""} onChange={e => handleTaskChange(idx, "ntpc_directives", e.target.value)} className="w-full border p-1 rounded text-[10px] text-rose-900 font-bold"></textarea></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {tab === "SAFETY" && (
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm fade-in space-y-4">
+                  <h3 className="text-xs font-black text-ntpc-blue uppercase tracking-wider">Log Field Safety Violation (Supabase Direct Storage)</h3>
+                  <div className="flex gap-4 items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <input type="text" id="saf-desc" className="flex-1 border bg-white p-2 rounded-lg text-xs" placeholder="Violation Description..." />
+                    <input type="file" id="saf-file" className="text-xs" />
+                    <button onClick={async () => {
+                      const desc = document.getElementById('saf-desc').value;
+                      const file = document.getElementById('saf-file').files[0];
+                      if (!desc) return alert("Add description");
+                      setLoading(true);
+                      let photoUrl = "";
+                      if (file) photoUrl = await uploadImage(file);
+                      await supabase.from('safety_logs').insert([{ week_no: weekNo, category: "Unsafe Condition", description: desc, photo_url: photoUrl }]);
+                      loadData();
+                    }} className="bg-ntpc-orange text-white text-xs font-black uppercase px-4 py-2 rounded-lg shadow">Post Instant</button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    {safetyLogs.map((s, i) => (
+                      <div key={i} className="border p-3 rounded-xl bg-slate-50 space-y-2">
+                        <div className="flex justify-between font-bold text-xs"><span className="text-ntpc-blue">{s.category}</span><span className="text-rose-600">{s.status}</span></div>
+                        <p className="text-xs">{s.description}</p>
+                        {s.photo_url && <img src={s.photo_url} className="h-32 w-full object-cover rounded-lg border" />}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </main>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
 </body>
 </html>
