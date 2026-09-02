@@ -1,4 +1,4 @@
-window.SCRIPT_URL = "YOUR_WEB_APP_URL_HERE"; // <-- PASTE YOUR APPS SCRIPT URL HERE
+window.SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxZFKq5QFXFv2ru1YTfgtx5cHhFvvQUc108pFrFB0Kba9YaWsncVNTxU6ASXJDk9FkZZg/exec"; // <-- PASTE YOUR APPS SCRIPT URL HERE
 
 window.apiPost = async (payload) => {
   try {
