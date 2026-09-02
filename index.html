@@ -3,277 +3,567 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NTPC Nabinagar STPP Stage-II — High-Speed WRM</title>
+  <title>Nabinagar STPP Stage-II — WRM Portal</title>
   
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
   <script>
     tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            ntpc: { blue: '#0066b3', navy: '#06163a', orange: '#ea580c' }
-          },
-          fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] }
-        }
-      }
+      theme: { extend: { colors: { ntpc: { blue: '#0066b3', navy: '#06163a', orange: '#ea580c' } }, fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'] } } }
     };
   </script>
 
   <style>
-    body { background-color: #f8fafc; }
-    .fade-in { animation: fadeIn 0.15s ease-out forwards; }
+    body { background-color: #f8fafc; font-feature-settings: "cv02", "cv03", "cv04", "cv11"; }
+    .fade-in { animation: fadeIn 0.18s ease-out forwards; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
     .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
     .custom-scroll::-webkit-scrollbar-track { background: transparent; }
     .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     .sticky-th { position: sticky; top: 0; z-index: 20; }
+    .sticky-th-sub { position: sticky; top: 28px; z-index: 19; }
+
+    /* EXACT IMAGE REPLICA PRINT HEADER CSS */
+    @media print {
+      body { background: white !important; font-family: 'Arial', sans-serif; }
+      .no-print { display: none !important; }
+      #printable-mom { display: block !important; width: 100% !important; color: black !important; }
+      @page { size: A4 landscape; margin: 10mm; }
+      table { border-collapse: collapse; width: 100%; page-break-inside: auto; margin-bottom: 15px;}
+      tr { page-break-inside: avoid; page-break-after: auto; }
+      th { background-color: #f1f5f9 !important; color: #000 !important; font-weight: bold; border: 1px solid #94a3b8; padding: 5px; font-size: 9px; }
+      td { border: 1px solid #94a3b8; padding: 5px; font-size: 8.5px; }
+      .print-header-container { display: flex; align-items: center; justify-content: space-between; border-bottom: 1.5px solid #d1d5db; padding-bottom: 8px; margin-bottom: 12px; }
+      .print-title { color: #0066b3; font-size: 22px; font-weight: 900; letter-spacing: -0.5px; margin: 0; }
+      .print-subtitle { font-size: 10px; font-style: italic; font-weight: bold; margin-top: 2px; }
+      .print-logo { height: 45px; }
+    }
   </style>
 </head>
 <body class="text-slate-800 antialiased">
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect, useCallback } = React;
+    const { useState, useEffect, useMemo, useCallback } = React;
 
-    // ==========================================
-    // CONFIGURATION: INSERT SUPABASE KEYS HERE
-    // ==========================================
-    const SUPABASE_URL = "https://dpgkxiqanmqwlmuasoas.supabase.co";
-    const SUPABASE_ANON_KEY = "sb_publishable_TSjRkxxjYgyHeBiTHh6r9A_HotvKJcJ";
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // ========================================================
+    // PASTE YOUR DEPLOYED APPS SCRIPT WEB APP URL HERE
+    // ========================================================
+    const SCRIPT_URL = "YOUR_WEB_APP_URL_HERE";
+
+    const apiPost = async (payload) => {
+      try { const res = await fetch(SCRIPT_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload) }); return await res.json(); } 
+      catch (err) { return { status: 500, error: err.message }; }
+    };
+
+    const formatDate = (val) => {
+      if (!val) return ""; const d = new Date(val); if (isNaN(d.getTime())) return val;
+      return new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+    };
+
+    // COMPONENTS
+    const ProgressRing = ({ pct, color, label, subtext }) => {
+      const radius = 32; const circumference = 2 * Math.PI * radius;
+      return (
+        <div className="flex items-center gap-3.5 bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm">
+          <div className="relative w-16 h-16 flex items-center justify-center flex-shrink-0">
+            <svg className="transform -rotate-90 w-full h-full"><circle cx="32" cy="32" r={radius} stroke="#e2e8f0" strokeWidth="5" fill="transparent" /><circle cx="32" cy="32" r={radius} stroke="currentColor" strokeWidth="5" fill="transparent" strokeDasharray={circumference} strokeDashoffset={circumference - (Math.min(100, Math.max(0, pct)) / 100) * circumference} strokeLinecap="round" className={`transition-all duration-700 ease-out ${color}`} /></svg>
+            <span className="absolute text-xs font-black tracking-tight">{pct}%</span>
+          </div>
+          <div><div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">{label}</div><div className="text-sm font-black text-slate-800 mt-0.5">{subtext}</div></div>
+        </div>
+      );
+    };
+
+    const DelayTracker = ({ title, tasks, discipline, l2Schedule }) => {
+      const delayedTasks = tasks.map(t => {
+        if (!t.l2Ref) return null;
+        const l2 = l2Schedule.find(l => l.desc === t.l2Ref && l.discipline === discipline);
+        if (!l2) return null;
+        const endL2 = l2.l2End ? new Date(l2.l2End) : null; const endAct = l2.actEnd ? new Date(l2.actEnd) : null;
+        const startL2 = l2.l2Start ? new Date(l2.l2Start) : null; const startAct = l2.actStart ? new Date(l2.actStart) : null;
+        const today = new Date(); let delayType = null, targetDisplay = "", actualDisplay = "";
+
+        if (endL2) {
+          endL2.setHours(0,0,0,0); if (endAct) endAct.setHours(0,0,0,0); today.setHours(0,0,0,0);
+          if (endAct && endAct > endL2) { delayType = "Finish Delayed"; targetDisplay = l2.l2End; actualDisplay = l2.actEnd; } 
+          else if (!endAct && today > endL2) { delayType = "Finish Overdue"; targetDisplay = l2.l2End; actualDisplay = "Not Finished"; }
+        }
+        if (!delayType && startL2) {
+          startL2.setHours(0,0,0,0); if (startAct) startAct.setHours(0,0,0,0); today.setHours(0,0,0,0);
+          if (startAct && startAct > startL2) { delayType = "Start Delayed"; targetDisplay = l2.l2Start; actualDisplay = l2.actStart; } 
+          else if (!startAct && today > startL2) { delayType = "Start Overdue"; targetDisplay = l2.l2Start; actualDisplay = "Not Started"; }
+        }
+        if (!delayType) return null;
+        return { taskName: t.taskName, l2Ref: t.l2Ref, targetDisplay, actualDisplay, hindrance: t.hindrance || "No hindrance reported.", delayType };
+      }).filter(Boolean);
+
+      if (delayedTasks.length === 0) return (<div className="mt-4 p-3 border border-emerald-200 bg-emerald-50 rounded-xl flex items-center justify-between"><h4 className="text-[11px] font-black uppercase tracking-wider text-emerald-800">{title}</h4><span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-md">✓ On Schedule</span></div>);
+
+      return (
+          <div className="mt-4 border border-rose-200 bg-white rounded-xl overflow-hidden shadow-sm">
+              <div className="bg-rose-50 px-4 py-2 border-b border-rose-200 flex justify-between items-center"><h4 className="text-[11px] font-black uppercase tracking-wider text-rose-800">{title} Delays</h4><span className="text-[9px] font-bold text-rose-600 bg-rose-200 px-2 py-0.5 rounded-full">{delayedTasks.length} Identified Slips</span></div>
+              <table className="w-full text-left text-[10px]"><thead className="bg-rose-50"><tr className="text-rose-900/60 uppercase"><th className="py-1.5 px-4 w-[15%] font-bold">Delay Type</th><th className="py-1.5 px-4 w-[20%] font-bold">L2 Front & Task</th><th className="py-1.5 px-4 w-[12%] font-bold">L2 Target</th><th className="py-1.5 px-4 w-[13%] font-bold text-rose-600">Actual/Status</th><th className="py-1.5 px-4 w-[40%] font-bold">Reported Hindrance</th></tr></thead><tbody className="divide-y divide-rose-100">{delayedTasks.map((d, i) => (<tr key={i} className="text-rose-950 font-bold hover:bg-rose-50/30"><td className="py-2 px-4 text-[9px] uppercase"><span className="bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded">{d.delayType}</span></td><td className="py-2 px-4"><strong>{d.l2Ref}</strong><br/><span className="text-slate-500">{d.taskName}</span></td><td className="py-2 px-4 text-slate-600">{d.targetDisplay}</td><td className="py-2 px-4"><span className="text-white bg-rose-500 px-2 py-1 rounded shadow-sm inline-block">{d.actualDisplay}</span></td><td className="py-2 px-4 text-rose-700">{d.hindrance}</td></tr>))}</tbody></table>
+          </div>
+      );
+    };
 
     function App() {
+      const [authState, setAuthState] = useState("LOGIN");
+      const [loginForm, setLoginForm] = useState({ userId: "", password: "" });
       const [role, setRole] = useState("NTPC");
-      const [tab, setTab] = useState("EXECUTION");
+      const [tab, setTab] = useState("DASHBOARD");
       const [weekNo, setWeekNo] = useState(35);
       const [availableWeeks, setAvailableWeeks] = useState([35]);
-      const [activeDiscipline, setActiveDiscipline] = useState("civil_execution");
+      const [isLocked, setIsLocked] = useState(false);
+      const [activeDiscipline, setActiveDiscipline] = useState("Civil_Execution");
+      const [activeChartTask, setActiveChartTask] = useState("Excavation");
       const [loading, setLoading] = useState(false);
       const [statusMsg, setStatusMsg] = useState("");
 
+      // Modals
+      const [showLogModal, setShowLogModal] = useState(false);
+      const [showWeekModal, setShowWeekModal] = useState(false);
+      const [newWeekInput, setNewWeekInput] = useState(36);
+      const [viewImageId, setViewImageId] = useState(null);
+      const [viewImageData, setViewImageData] = useState(null);
+      const [imageLoading, setImageLoading] = useState(false);
+      const [logForm, setLogForm] = useState({ type: "Safety", category: "Unsafe Condition", desc: "", file: null });
+
       // Live Entities
+      const [teamData, setTeamData] = useState([]);
+      const [attendees, setAttendees] = useState({ ntpc: [{ name: "", desig: "" }], tpl: [{ name: "", desig: "" }] });
+      const [siteStats, setSiteStats] = useState({ manpower: 0, trained: 0 });
       const [l2Schedule, setL2Schedule] = useState([]);
-      const [tasks, setTasks] = useState([]);
+      const [civilTasks, setCivilTasks] = useState([]);
+      const [mechTasks, setMechTasks] = useState([]);
+      const [elecTasks, setElecTasks] = useState([]);
+      const [civilHistory, setCivilHistory] = useState({});
       const [drawings, setDrawings] = useState([]);
-      const [actions, setActions] = useState([]);
       const [safetyLogs, setSafetyLogs] = useState([]);
+      const [qualityLogs, setQualityLogs] = useState([]);
+      const [actions, setActions] = useState([]);
 
-      // Fetch All Data at Millisecond Latency
-      const loadData = useCallback(async () => {
-        setLoading(true);
-        setStatusMsg("Direct SQL Fetching...");
+      const presetCivilTasks = ["Excavation", "PCC", "RCC", "Backfilling", "Brickwork", "Plastering", "Painting", "Drain PCC", "Drain RCC", "Drain Wall", "Piling"];
 
-        // 1. Fetch Master Weeks
-        const { data: weeks } = await supabase.from('week_master').select('week_no').order('week_no', { ascending: false });
-        if (weeks) setAvailableWeeks(weeks.map(w => w.week_no));
+      useEffect(() => {
+        const savedRole = localStorage.getItem("wrm_role"); const savedUser = localStorage.getItem("wrm_userId");
+        if (savedRole && savedUser) { setRole(savedRole); setAuthState("PORTAL"); }
+      }, []);
 
-        // 2. Fetch L2 Targets
-        const { data: l2 } = await supabase.from('l2_schedule').select('*');
-        if (l2) setL2Schedule(l2);
+      const loadData = useCallback(async (targetWeek) => {
+        if (authState !== "PORTAL") return;
+        setLoading(true); setStatusMsg("Synchronizing Workspace...");
+        const w = targetWeek || weekNo;
 
-        // 3. Fetch Active Execution Table
-        const { data: exec } = await supabase.from(activeDiscipline).select('*').eq('week_no', weekNo);
-        if (exec) setTasks(exec);
+        try {
+          const res = await fetch(`${SCRIPT_URL}?week=${w}`);
+          const data = await res.json();
 
-        // 4. Fetch Drawings
-        const { data: dwg } = await supabase.from('drawings_status').select('*').eq('week_no', weekNo);
-        if (dwg) setDrawings(dwg);
+          if (data.status === 200) {
+            setIsLocked(Boolean(data.weekMeta?.isLocked));
+            setTeamData(data.teamData || []);
+            setSiteStats({ manpower: data.weekMeta?.manpower || 0, trained: data.weekMeta?.trained || 0 });
 
-        // 5. Fetch Actions
-        const { data: acts } = await supabase.from('action_tracker').select('*').eq('week_no', weekNo);
-        if (acts) setActions(acts);
+            try {
+              const pNtpc = typeof data.weekMeta?.ntpc === 'string' ? JSON.parse(data.weekMeta.ntpc) : data.weekMeta?.ntpc;
+              const pTpl = typeof data.weekMeta?.tpl === 'string' ? JSON.parse(data.weekMeta.tpl) : data.weekMeta?.tpl;
+              setAttendees({ ntpc: Array.isArray(pNtpc) && pNtpc.length ? pNtpc : [{ name: "", desig: "" }], tpl: Array.isArray(pTpl) && pTpl.length ? pTpl : [{ name: "", desig: "" }] });
+            } catch (e) { setAttendees({ ntpc: [{ name: "", desig: "" }], tpl: [{ name: "", desig: "" }] }); }
 
-        // 6. Fetch Safety
-        const { data: saf } = await supabase.from('safety_logs').select('*').eq('week_no', weekNo);
-        if (saf) setSafetyLogs(saf);
+            if (data.allWeeks?.length) setAvailableWeeks(data.allWeeks);
 
-        setLoading(false);
-        setStatusMsg("Live Connected (<50ms)");
-      }, [weekNo, activeDiscipline]);
+            setL2Schedule((data.l2Data || []).filter(r => r.Work_Description).map(r => ({ id: r.L2_ID || "", discipline: r.Discipline || "Civil", desc: r.Work_Description || "", l2Start: formatDate(r.L2_Start), actStart: formatDate(r.Act_Start), l2End: formatDate(r.L2_End), actEnd: formatDate(r.Act_End) })));
+            
+            const mapExec = (r) => ({ id: r.Task_ID || "", l2Ref: r.L2_Reference || "", taskName: r.Task_Name || "", unit: r.Unit || "m³", plan: parseFloat(r.Wk_Plan) || 0, act: parseFloat(r.Wk_Act) || 0, next: parseFloat(r.Next_Plan) || 0, cumBacklog: parseFloat(r.Cum_Backlog) || 0, hindrance: r.Hindrance || "", tplRemarks: r.TPL_Remarks || "", ntpcDirectives: r.NTPC_Directives || "", milestone: r.Milestone_Status || "None" });
+            setCivilTasks((data.civilData || []).filter(r => r.L2_Reference || r.Task_Name).map(mapExec));
+            setMechTasks((data.mechData || []).filter(r => r.L2_Reference || r.Task_Name).map(mapExec));
+            setElecTasks((data.elecData || []).filter(r => r.L2_Reference || r.Task_Name).map(mapExec));
+            setCivilHistory(data.civilHistory || {});
+            
+            setDrawings((data.drawingData || []).filter(r => r.Drawing_No).map(r => ({ id: r.Dwg_ID || "", discipline: r.Discipline || "Civil", drawingNo: r.Drawing_No || "", desc: r.Description || "", priority: r.Priority || "Moderate", targetDate: formatDate(r.Target_Date), expectedDate: formatDate(r.Expected_Date), status: r.Status || "Pending", frontImpact: r.Front_Impact || "", remarks: r.Remarks || "" })));
+            setSafetyLogs((data.safetyData || []).filter(s => s.Description).map(s => ({ id: s.Log_ID, weekNo: s.Week_No || w, category: s.Category || "Unsafe Condition", desc: s.Description, status: s.Status || "Open", photoUrl: s.Photo_URL || "" })));
+            setQualityLogs((data.qualityData || []).filter(q => q.Description).map(q => ({ id: q.Log_ID, weekNo: q.Week_No || w, category: q.Category || "Civil NCR", desc: q.Description, status: q.Status || "Open", photoUrl: q.Photo_URL || "" })));
+            setActions((data.actionData || []).filter(a => a.Description).map(a => ({ id: a.Action_ID || "", weekNo: a.Week_No || w, category: a.Category || "Execution", desc: a.Description, responsibility: a.Responsibility || "TPL", targetDate: formatDate(a.Target_Date), revisedDate: formatDate(a.Revised_Date), status: a.Status || "Pending", ntpcRemarks: a.NTPC_Remarks || "" })));
+            
+            setStatusMsg("Live Connected");
+          }
+        } catch (e) { setStatusMsg("Offline Mode"); } finally { setLoading(false); }
+      }, [weekNo, authState]);
 
       useEffect(() => { loadData(); }, [loadData]);
 
-      // Instant Upsert Persistence
-      const saveTasks = async () => {
-        setLoading(true);
-        setStatusMsg("Committing SQL writes...");
-        const { error } = await supabase.from(activeDiscipline).upsert(tasks);
-        if (error) alert("Database write error: " + error.message);
-        else { setStatusMsg("Persisted Successfully!"); loadData(); }
+      const handleWeekChange = (w) => { setWeekNo(parseInt(w)); loadData(parseInt(w)); };
+
+      const handleLogin = async () => {
+        if (!loginForm.userId || !loginForm.password) return alert("Enter credentials");
+        setLoading(true); setStatusMsg("Validating...");
+        const res = await apiPost({ action: "LOGIN", userId: loginForm.userId, password: loginForm.password });
+        if (res.status === 200) { setRole(res.role); localStorage.setItem("wrm_role", res.role); localStorage.setItem("wrm_userId", loginForm.userId); setAuthState("PORTAL"); } 
+        else { alert(res.error || "Login failed"); }
         setLoading(false);
       };
 
-      // Native Storage Upload
-      const uploadImage = async (file) => {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Date.now()}.${fileExt}`;
-        const filePath = `${fileName}`;
-
-        const { error } = await supabase.storage.from('wrm_evidence').upload(filePath, file);
-        if (error) { alert("Photo Storage Failed: " + error.message); return null; }
-
-        const { data } = supabase.storage.from('wrm_evidence').getPublicUrl(filePath);
-        return data.publicUrl;
+      const fetchAndShowImage = async (urlOrId) => {
+        if (!urlOrId) return; let fileId = urlOrId; const match = urlOrId.match(/(?:id=|d\/)([a-zA-Z0-9_-]{25,})/); if (match) fileId = match[1];
+        setViewImageId(fileId); setImageLoading(true); setViewImageData(null);
+        const res = await apiPost({ action: "GET_IMAGE", fileId });
+        if (res.status === 200) setViewImageData(res.base64); else { alert("Image fetch failed."); setViewImageId(null); }
+        setImageLoading(false);
       };
 
-      // Dynamic Metrics Adjustment
-      const handleTaskChange = (idx, field, val) => {
-        const copy = [...tasks];
-        copy[idx][field] = val;
-        if (field === 'wk_plan' || field === 'wk_act') {
-          const plan = parseFloat(copy[idx].wk_plan) || 0;
-          const act = parseFloat(copy[idx].wk_act) || 0;
-          copy[idx].variance = act - plan;
-        }
-        setTasks(copy);
+      const currentTasks = activeDiscipline === "Civil_Execution" ? civilTasks : activeDiscipline === "Mech_Execution" ? mechTasks : elecTasks;
+      const setCurrentTasks = (u) => { if (activeDiscipline === "Civil_Execution") setCivilTasks(u); else if (activeDiscipline === "Mech_Execution") setMechTasks(u); else setElecTasks(u); };
+
+      const handleRowChange = (arr, setArr, idx, field, val) => { const copy = [...arr]; copy[idx][field] = val; setArr(copy); };
+
+      const handleTaskMetricChange = (idx, field, val) => {
+        const copy = [...currentTasks]; copy[idx][field] = val;
+        const plan = parseFloat(field === 'plan' ? val : copy[idx].plan) || 0; const act = parseFloat(field === 'act' ? val : copy[idx].act) || 0; const currentVariance = act - plan;
+        if (field === 'act' || field === 'plan') { const prevBacklog = parseFloat(copy[idx].cumBacklog) || 0; copy[idx].computedBacklog = currentVariance < 0 ? prevBacklog + Math.abs(currentVariance) : Math.max(0, prevBacklog - currentVariance); }
+        setCurrentTasks(copy);
       };
+
+      const saveActiveSheet = async (sheetName, rows) => {
+        setLoading(true); setStatusMsg(`Saving ${sheetName}...`);
+        const res = await apiPost({ action: "SAVE_DATA", weekNo, role, sheetName, rows });
+        if (res.status === 200) { setStatusMsg("Changes Recorded"); loadData(); } else { alert(res.error || "Save Failed"); }
+        setLoading(false);
+      };
+
+      const saveWeekMeta = async () => {
+        setLoading(true); setStatusMsg("Saving Meta...");
+        await apiPost({ action: "UPDATE_WEEK_META", weekNo, ntpcAttendees: attendees.ntpc, tplAttendees: attendees.tpl, manpower: siteStats.manpower, trained: siteStats.trained });
+        setStatusMsg("Metadata Saved"); setLoading(false);
+      };
+
+      const submitLog = async () => {
+        if (!logForm.desc) return alert("Please provide a description.");
+        setLoading(true); setStatusMsg("Uploading Observation...");
+        let b64 = "", fName = "", mType = "";
+        if (logForm.file) { fName = logForm.file.name; mType = logForm.file.type; b64 = await new Promise((res) => { const rd = new FileReader(); rd.onload = () => res(rd.result.split(',')[1]); rd.readAsDataURL(logForm.file); }); }
+        const res = await apiPost({ action: "SAVE_LOG", weekNo, logType: logForm.type, category: logForm.category, desc: logForm.desc, photoBase64: b64, fileName: fName, mimeType: mType });
+        if (res.status === 200) { setShowLogModal(false); setLogForm({ type: "Safety", category: "Unsafe Condition", desc: "", file: null }); loadData(); } else { alert("Log failed"); }
+        setLoading(false);
+      };
+
+      const toggleStatus = async (sheetName, logId, currentStatus) => {
+        const newStatus = (currentStatus === "Open" || currentStatus === "Pending") ? "Complied" : "Open";
+        setLoading(true); setStatusMsg("Updating Status...");
+        await apiPost({ action: "UPDATE_LOG_STATUS", role, sheetName, logId, status: newStatus }); loadData();
+      };
+
+      const handleTeamSelect = (team, index, empId) => {
+        const member = teamData.find(t => t.Emp_ID === empId);
+        if (member) { const u = [...attendees[team]]; u[index] = { name: member.Name, desig: member.Designation }; setAttendees({ ...attendees, [team]: u }); }
+      };
+
+      const calcProgress = (tasks) => {
+        if (!tasks.length) return 0;
+        const p = tasks.reduce((a, t) => a + (parseFloat(t.plan) || 0), 0);
+        const a = tasks.reduce((a, t) => a + (parseFloat(t.act) || 0), 0);
+        return p === 0 ? 0 : Math.min(100, Math.round((a / p) * 100));
+      };
+
+      const chartData = useMemo(() => {
+        const key = activeChartTask.toLowerCase(); if (!civilHistory[key]) return [];
+        return Object.keys(civilHistory[key]).sort((a, b) => parseInt(a) - parseInt(b)).map(w => ({ week: w, value: civilHistory[key][w] }));
+      }, [civilHistory, activeChartTask]);
+
+      const isTplDisabled = role === "TPL" && isLocked;
+
+      if (authState === "LOGIN") {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-slate-900 px-4">
+            <div className="bg-white p-8 sm:p-10 rounded-3xl max-w-md w-full shadow-2xl border border-slate-100 fade-in">
+              <div className="flex items-center gap-3 justify-center mb-8">
+                <div className="w-12 h-12 bg-ntpc-blue text-white rounded-2xl flex items-center justify-center font-black text-2xl shadow-lg border-2 border-orange-500">N</div>
+                <div className="text-left"><h1 className="text-base font-black text-ntpc-blue uppercase tracking-tight">NTPC Nabinagar</h1><p className="text-[10px] font-extrabold text-orange-600 uppercase tracking-widest">Stage-II Review Portal</p></div>
+              </div>
+              <div className="space-y-4">
+                <div><label className="text-[10px] font-extrabold uppercase text-slate-400 block mb-1.5 ml-1">Username / ID</label><input type="text" value={loginForm.userId} onChange={e => setLoginForm({ ...loginForm, userId: e.target.value })} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm font-semibold outline-none focus:border-ntpc-blue" placeholder="e.g. NTPC_ADMIN" /></div>
+                <div><label className="text-[10px] font-extrabold uppercase text-slate-400 block mb-1.5 ml-1">Password</label><input type="password" value={loginForm.password} onChange={e => setLoginForm({ ...loginForm, password: e.target.value })} className="w-full bg-slate-50 border border-slate-200 px-4 py-3 rounded-xl text-sm font-semibold outline-none focus:border-ntpc-blue" placeholder="••••••••" /></div>
+                <button onClick={handleLogin} disabled={loading} className="w-full mt-2 bg-ntpc-blue text-white font-extrabold py-3.5 rounded-xl text-xs uppercase tracking-widest shadow-lg flex items-center justify-center gap-2">{loading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : "Secure Access"}</button>
+              </div>
+            </div>
+          </div>
+        );
+      }
 
       return (
-        <div className="flex h-screen w-screen bg-slate-100 overflow-hidden font-sans">
-          {/* Sidebar */}
-          <aside className="w-64 bg-ntpc-navy text-white flex flex-col h-screen shadow-2xl flex-shrink-0 z-50">
-            <div className="p-5 flex items-center gap-3 border-b border-white/10">
-              <div className="w-10 h-10 bg-ntpc-orange text-white rounded-xl flex items-center justify-center font-black text-xl shadow-md border border-white/20">N</div>
-              <div>
-                <h1 className="text-xs font-black uppercase tracking-wider leading-none">Nabinagar STPP</h1>
-                <p className="text-[9px] text-orange-400 font-bold uppercase tracking-widest mt-1">Supabase Ultra-Fast</p>
-              </div>
-            </div>
-            <nav className="flex-1 px-4 py-6 space-y-2">
-              {[
-                { id: "EXECUTION", icon: "🏗️", label: "Execution Tracking" },
-                { id: "DRAWINGS", icon: "📐", label: "Drawings & DCI" },
-                { id: "SAFETY", icon: "🛡️", label: "HSE Observations" }
-              ].map(t => (
-                <button key={t.id} onClick={() => setTab(t.id)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all ${tab === t.id ? "bg-ntpc-orange text-white shadow-lg" : "text-slate-400 hover:bg-white/5 hover:text-white"}`}>
-                  <span className="text-lg">{t.icon}</span>{t.label}
-                </button>
-              ))}
-            </nav>
-            <div className="p-4 border-t border-white/10">
-              <span className="text-[10px] text-slate-400 uppercase font-black">Logged: {role}</span>
-            </div>
-          </aside>
+        <div className="min-h-screen flex flex-col">
+          <datalist id="preset-tasks">{presetCivilTasks.map(pt => <option key={pt} value={pt} />)}</datalist>
 
-          {/* Master View Area */}
-          <div className="flex-1 flex flex-col h-full overflow-hidden">
-            <header className="bg-white border-b border-slate-200 px-8 py-3.5 flex items-center justify-between z-30 shadow-sm">
+          {/* GLOBAL REALTIME LOADER */}
+          {loading && (<div className="fixed bottom-6 right-6 z-50 bg-slate-900/90 backdrop-blur-md text-white px-5 py-3 rounded-2xl shadow-2xl border border-white/10 flex items-center gap-3 fade-in"><div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div><span className="text-xs font-bold tracking-wide">{statusMsg || "Processing..."}</span></div>)}
+
+          {/* TOP HEADER */}
+          <header className="bg-ntpc-navy text-white px-6 py-3 sticky top-0 z-40 shadow-md no-print border-b border-white/10">
+            <div className="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <span className="text-xs font-black text-ntpc-blue uppercase tracking-wider">Review Week:</span>
-                <select value={weekNo} onChange={e => setWeekNo(parseInt(e.target.value))} className="bg-slate-100 font-black text-xs px-3 py-1.5 rounded-lg border border-slate-300 outline-none cursor-pointer">
-                  {availableWeeks.map(w => <option key={w} value={w}>Week {w}</option>)}
-                </select>
-                <span className="text-[10px] text-emerald-600 font-extrabold bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-md">{statusMsg}</span>
+                <div className="w-9 h-9 bg-ntpc-orange text-white rounded-xl flex items-center justify-center font-black text-lg shadow-md border border-white/20">N</div>
+                <div><h1 className="text-xs font-black uppercase tracking-wider leading-none">Nabinagar STPP Stage-II</h1><p className="text-[9px] text-orange-400 font-bold uppercase tracking-widest mt-1">Weekly Review Management</p></div>
               </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setRole(role === "NTPC" ? "TPL" : "NTPC")} className="bg-slate-800 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-lg">Role: {role}</button>
-                <button onClick={() => window.print()} className="bg-ntpc-blue text-white text-[10px] font-black uppercase px-4 py-1.5 rounded-lg shadow">Print MoM</button>
-              </div>
-            </header>
 
-            <main className="flex-1 overflow-y-auto p-6 custom-scroll">
-              {tab === "EXECUTION" && (
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden fade-in">
-                  <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                    <div className="flex gap-2">
-                      {[
-                        { k: "civil_execution", l: "Civil Works" },
-                        { k: "mech_execution", l: "Mechanical" },
-                        { k: "elec_execution", l: "Electrical" }
-                      ].map(d => (
-                        <button key={d.k} onClick={() => setActiveDiscipline(d.k)} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider ${activeDiscipline === d.k ? "bg-ntpc-blue text-white shadow" : "bg-white border text-slate-600"}`}>
-                          {d.l}
-                        </button>
-                      ))}
+              <nav className="flex flex-wrap items-center justify-center bg-black/30 p-1 rounded-xl border border-white/10">
+                {[{ id: "DASHBOARD", label: "Executive Summary" }, { id: "L2 SCHEDULE", label: "L2 Master Fronts" }, { id: "EXECUTION", label: "Discipline Execution" }, { id: "DRAWINGS", label: "Engineering & DCI" }, { id: "HSE & QA", label: "HSE & Quality NCR" }, { id: "ACTIONS", label: "Bottlenecks Tracker" }].map(t => (
+                  <button key={t.id} onClick={() => setTab(t.id)} className={`px-3.5 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${tab === t.id ? "bg-ntpc-orange text-white shadow-md" : "text-slate-300 hover:text-white"}`}>{t.label}</button>
+                ))}
+              </nav>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <select value={weekNo} onChange={e => handleWeekChange(e.target.value)} className="bg-black/40 text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-white/10 outline-none cursor-pointer">
+                  {availableWeeks.map(w => <option key={w} value={w} className="text-slate-900">Review Week {w}</option>)}
+                </select>
+                {role === "NTPC" && (<button onClick={() => setShowWeekModal(true)} title="Initialize Next Review Week" className="bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-black uppercase shadow">+ Wk</button>)}
+                <span className={`px-2.5 py-1 text-[9px] font-black tracking-widest uppercase rounded-md border ${isLocked ? "bg-red-500/20 text-red-300 border-red-500/30" : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"}`}>{isLocked ? "LOCKED" : "OPEN"}</span>
+                <button onClick={() => window.print()} className="bg-white hover:bg-slate-100 text-ntpc-navy px-3.5 py-1.5 rounded-lg text-xs font-extrabold uppercase tracking-wider shadow">Print MoM</button>
+                <button onClick={() => { localStorage.clear(); setAuthState("LOGIN"); }} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded-lg text-xs font-bold uppercase">Exit</button>
+              </div>
+            </div>
+          </header>
+
+          <main className="max-w-[1600px] w-full mx-auto p-5 sm:p-6 flex-1 no-print">
+
+            {/* TAB: DASHBOARD */}
+            {tab === "DASHBOARD" && (
+              <div className="space-y-6 fade-in">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <ProgressRing pct={calcProgress(civilTasks)} color="text-blue-600" label="Civil Engineering" subtext={`${civilTasks.filter(t=>t.act>=t.plan&&t.plan>0).length}/${civilTasks.length} Targets Hit`} />
+                  <ProgressRing pct={calcProgress(mechTasks)} color="text-amber-500" label="Mechanical Erection" subtext={`${mechTasks.filter(t=>t.act>=t.plan&&t.plan>0).length}/${mechTasks.length} Targets Hit`} />
+                  <ProgressRing pct={calcProgress(elecTasks)} color="text-emerald-500" label="Electrical & C&I" subtext={`${elecTasks.filter(t=>t.act>=t.plan&&t.plan>0).length}/${elecTasks.length} Targets Hit`} />
+                </div>
+                
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Pending Drawings</span><div className="text-2xl font-black text-amber-500 mt-1">{drawings.filter(d => d.status !== "Cat-1 Approved").length}</div></div>
+                  <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Unresolved Bottlenecks</span><div className="text-2xl font-black text-red-600 mt-1">{actions.filter(a => a.status !== "Completed").length}</div></div>
+                  <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Open Unsafe Conditions</span><div className="text-2xl font-black text-ntpc-orange mt-1">{safetyLogs.filter(s => s.status === "Open" && s.category === "Unsafe Condition").length}</div></div>
+                  <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm"><span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Site Manpower Deployed</span><div className="text-2xl font-black text-blue-800 mt-1">{siteStats.manpower}</div></div>
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+                   <h3 className="text-xs font-black text-ntpc-blue uppercase tracking-wider mb-2">Critical L2 Schedule Variance Diagnostics</h3>
+                   <p className="text-[10px] text-slate-400 font-bold uppercase mb-4">Auto-crosschecked against L2 Master Target Dates</p>
+                   <DelayTracker title="Civil" tasks={civilTasks} discipline="Civil" l2Schedule={l2Schedule} />
+                   <DelayTracker title="Mechanical" tasks={mechTasks} discipline="Mechanical" l2Schedule={l2Schedule} />
+                   <DelayTracker title="Electrical" tasks={elecTasks} discipline="Electrical" l2Schedule={l2Schedule} />
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+                    <div className="flex items-center justify-between mb-4">
+                      <div><h3 className="text-xs font-black text-ntpc-blue uppercase tracking-wider">Production Trend Tracking</h3></div>
+                      <select value={activeChartTask} onChange={e => setActiveChartTask(e.target.value)} className="bg-slate-50 border border-slate-200 text-xs font-bold px-3 py-1.5 rounded-lg outline-none cursor-pointer">{presetCivilTasks.map(t => <option key={t}>{t}</option>)}</select>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => setTasks([...tasks, { week_no: weekNo, l2_reference: "", task_name: "", unit: "m³", wk_plan: 0, wk_act: 0, next_plan: 0, cum_backlog: 0, hindrance: "", tpl_remarks: "", ntpc_directives: "" }])} className="bg-ntpc-orange text-white text-xs font-black uppercase px-3 py-1.5 rounded-lg">
-                        + Add Task
-                      </button>
-                      <button onClick={saveTasks} className="bg-emerald-600 text-white text-xs font-black uppercase px-4 py-1.5 rounded-lg shadow">
-                        Save to Supabase
-                      </button>
+                    <div className="h-44 flex items-end gap-3 pt-6 border-b border-slate-200">
+                      {chartData.length === 0 ? (<div className="w-full h-full flex items-center justify-center text-xs font-bold text-slate-400">No logs yet.</div>) : (chartData.map((d, i) => { const maxVal = Math.max(...chartData.map(c => c.value)) || 1; const hPct = Math.max(12, (d.value / maxVal) * 100); return (<div key={i} className="flex flex-col items-center flex-1 group"><span className="text-[9px] font-bold text-slate-500 mb-1.5 opacity-0 group-hover:opacity-100">{d.value}</span><div className="w-full bg-ntpc-blue rounded-t hover:bg-orange-500 transition-colors" style={{ height: `${hPct}%` }}></div><span className="text-[9px] font-extrabold text-slate-600 mt-2">Wk {d.week}</span></div>); }))}
                     </div>
                   </div>
 
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
+                    <div>
+                      <h3 className="text-xs font-black text-ntpc-blue uppercase tracking-wider mb-3">WRM Representatives Database</h3>
+                      <div className="space-y-4 max-h-60 overflow-y-auto pr-1 custom-scroll">
+                        <div>
+                          <span className="text-[9px] font-black uppercase text-blue-600 block mb-1">NTPC Leadership Team</span>
+                          {attendees.ntpc.map((a, i) => (
+                            <div key={i} className="flex gap-2 mb-1.5">
+                              <select onChange={e => handleTeamSelect("ntpc", i, e.target.value)} className="w-[40%] bg-slate-50 border border-slate-200 p-1.5 rounded text-[10px] font-bold outline-none"><option value="">Lookup...</option>{teamData.filter(t => t.Organization === 'NTPC').map(t => <option key={t.Emp_ID} value={t.Emp_ID}>{t.Name}</option>)}</select>
+                              <input type="text" value={a.name || ""} onChange={e => { const u = [...attendees.ntpc]; u[i].name = e.target.value; setAttendees({ ...attendees, ntpc: u }); }} placeholder="Name" className="w-[30%] bg-slate-50 border border-slate-200 p-1.5 rounded text-[10px] font-bold outline-none" />
+                              <input type="text" value={a.desig || ""} onChange={e => { const u = [...attendees.ntpc]; u[i].desig = e.target.value; setAttendees({ ...attendees, ntpc: u }); }} placeholder="Desig." className="w-[30%] bg-slate-50 border border-slate-200 p-1.5 rounded text-[10px] font-bold outline-none" />
+                            </div>
+                          ))}
+                          <button onClick={() => setAttendees({ ...attendees, ntpc: [...attendees.ntpc, { name: "", desig: "" }] })} className="text-[9px] font-black text-blue-600 hover:underline uppercase">+ Add Official</button>
+                        </div>
+                        <div>
+                          <span className="text-[9px] font-black uppercase text-orange-600 block mb-1">M/s TPL Leadership Team</span>
+                          {attendees.tpl.map((a, i) => (
+                            <div key={i} className="flex gap-2 mb-1.5">
+                              <select onChange={e => handleTeamSelect("tpl", i, e.target.value)} className="w-[40%] bg-slate-50 border border-slate-200 p-1.5 rounded text-[10px] font-bold outline-none"><option value="">Lookup...</option>{teamData.filter(t => t.Organization === 'TPL').map(t => <option key={t.Emp_ID} value={t.Emp_ID}>{t.Name}</option>)}</select>
+                              <input type="text" value={a.name || ""} onChange={e => { const u = [...attendees.tpl]; u[i].name = e.target.value; setAttendees({ ...attendees, tpl: u }); }} placeholder="Name" className="w-[30%] bg-slate-50 border border-slate-200 p-1.5 rounded text-[10px] font-bold outline-none" />
+                              <input type="text" value={a.desig || ""} onChange={e => { const u = [...attendees.tpl]; u[i].desig = e.target.value; setAttendees({ ...attendees, tpl: u }); }} placeholder="Desig." className="w-[30%] bg-slate-50 border border-slate-200 p-1.5 rounded text-[10px] font-bold outline-none" />
+                            </div>
+                          ))}
+                          <button onClick={() => setAttendees({ ...attendees, tpl: [...attendees.tpl, { name: "", desig: "" }] })} className="text-[9px] font-black text-orange-600 hover:underline uppercase">+ Add Executive</button>
+                        </div>
+                      </div>
+                    </div>
+                    <button onClick={saveWeekMeta} className="w-full mt-4 bg-ntpc-blue text-white font-extrabold py-2 rounded-xl text-xs uppercase tracking-wider transition-all shadow">Save Representatives</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: L2 SCHEDULE */}
+            {tab === "L2 SCHEDULE" && (
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden fade-in">
+                <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between">
+                  <div><h2 className="text-xs font-black text-ntpc-blue uppercase tracking-wider">Level-2 Contract Master Schedule</h2></div>
+                  <div className="flex items-center gap-2"><button onClick={() => setL2Schedule([...l2Schedule, { id: "", discipline: "Civil", desc: "", l2Start: "", actStart: "", l2End: "", actEnd: "" }])} disabled={role === "TPL"} className="bg-ntpc-orange text-white px-3.5 py-1.5 rounded-lg text-xs font-extrabold uppercase disabled:opacity-40">+ Add Work Front</button><button onClick={() => saveActiveSheet("L2_Schedule", l2Schedule)} disabled={role === "TPL"} className="bg-ntpc-blue text-white px-4 py-1.5 rounded-lg text-xs font-extrabold uppercase disabled:opacity-40 shadow">Save Changes</button></div>
+                </div>
+                <div className="table-container max-h-[calc(100vh-250px)] overflow-y-auto custom-scroll">
                   <table className="w-full text-left text-xs">
+                    <thead><tr className="bg-ntpc-navy text-white text-[9px] uppercase tracking-wider sticky-th"><th className="p-3 w-[15%]">Discipline</th><th className="p-3 w-[35%]">L2 Work Front Description</th><th className="p-3 w-[12.5%] text-center">Baseline Start</th><th className="p-3 w-[12.5%] text-center">Actual Start</th><th className="p-3 w-[12.5%] text-center">Baseline Finish</th><th className="p-3 w-[12.5%] text-center">Actual Finish</th></tr></thead>
+                    <tbody className="divide-y divide-slate-100">{l2Schedule.map((l2, idx) => (<tr key={idx} className="hover:bg-slate-50/60"><td className="p-2"><select disabled={role === "TPL"} value={l2.discipline || "Civil"} onChange={e => handleRowChange(l2Schedule, setL2Schedule, idx, "discipline", e.target.value)} className="w-full bg-slate-100 rounded-lg p-1.5 font-bold outline-none text-[10px]"><option>Civil</option><option>Mechanical</option><option>Electrical</option></select></td><td className="p-2"><input type="text" disabled={role === "TPL"} value={l2.desc || ""} onChange={e => handleRowChange(l2Schedule, setL2Schedule, idx, "desc", e.target.value)} className="w-full bg-transparent font-bold border-b border-slate-200 outline-none focus:border-ntpc-orange text-[11px]" /></td><td className="p-2 text-center"><input type="date" disabled={role === "TPL"} value={l2.l2Start || ""} onChange={e => handleRowChange(l2Schedule, setL2Schedule, idx, "l2Start", e.target.value)} className="bg-slate-100 p-1.5 rounded text-[10px] font-bold outline-none" /></td><td className="p-2 text-center"><input type="date" disabled={role === "TPL"} value={l2.actStart || ""} onChange={e => handleRowChange(l2Schedule, setL2Schedule, idx, "actStart", e.target.value)} className="bg-blue-50 text-blue-900 p-1.5 rounded text-[10px] font-bold outline-none" /></td><td className="p-2 text-center"><input type="date" disabled={role === "TPL"} value={l2.l2End || ""} onChange={e => handleRowChange(l2Schedule, setL2Schedule, idx, "l2End", e.target.value)} className="bg-slate-100 p-1.5 rounded text-[10px] font-bold outline-none" /></td><td className="p-2 text-center"><input type="date" disabled={role === "TPL"} value={l2.actEnd || ""} onChange={e => handleRowChange(l2Schedule, setL2Schedule, idx, "actEnd", e.target.value)} className="bg-blue-50 text-blue-900 p-1.5 rounded text-[10px] font-bold outline-none" /></td></tr>))}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: EXECUTION */}
+            {tab === "EXECUTION" && (
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden fade-in">
+                <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-1.5 bg-slate-200/80 p-1 rounded-xl">{[{ key: "Civil_Execution", label: "Civil Works" }, { key: "Mech_Execution", label: "Mechanical" }, { key: "Elec_Execution", label: "Electrical & C&I" }].map(d => (<button key={d.key} onClick={() => setActiveDiscipline(d.key)} className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all ${activeDiscipline === d.key ? "bg-ntpc-blue text-white shadow" : "text-slate-600 hover:text-slate-900"}`}>{d.label}</button>))}</div>
+                  <div className="flex items-center gap-2"><button onClick={() => setCurrentTasks([...currentTasks, { id: "", l2Ref: "", taskName: "", unit: "m³", plan: 0, act: 0, next: 0, cumBacklog: 0, hindrance: "", tplRemarks: "", ntpcDirectives: "", milestone: "None" }])} disabled={isTplDisabled} className="bg-ntpc-orange text-white px-3.5 py-1.5 rounded-lg text-xs font-extrabold uppercase disabled:opacity-40">+ Add Item</button>{role === "NTPC" && (<button onClick={async () => { await apiPost({ action: "TOGGLE_LOCK", weekNo, role, isLocked: !isLocked }); loadData(); }} className={`px-3 py-1.5 rounded-lg text-xs font-extrabold uppercase text-white shadow ${isLocked ? "bg-emerald-600" : "bg-rose-600"}`}>{isLocked ? "Unlock Week" : "Lock Week"}</button>)}<button onClick={() => saveActiveSheet(activeDiscipline, currentTasks)} className="bg-ntpc-blue text-white px-4 py-1.5 rounded-lg text-xs font-extrabold uppercase shadow">Save Tracker</button></div>
+                </div>
+                <div className="table-container max-h-[calc(100vh-260px)] overflow-y-auto custom-scroll">
+                  <table className="w-full text-left text-[11px]">
                     <thead>
-                      <tr className="bg-ntpc-navy text-white text-[9px] uppercase tracking-wider sticky-th">
-                        <th className="p-3">L2 Front</th>
-                        <th className="p-3">Task Name</th>
-                        <th className="p-3 text-center">Unit</th>
-                        <th className="p-3 text-center">Plan</th>
-                        <th className="p-3 text-center">Actual</th>
-                        <th className="p-3 text-center">Variance</th>
-                        <th className="p-3">Hindrance Detail</th>
-                        <th className="p-3">TPL Remarks</th>
-                        <th className="p-3">NTPC Directives</th>
-                      </tr>
+                      <tr className="bg-slate-900 text-white text-[8.5px] uppercase tracking-wider sticky-th"><th colSpan="3" className="p-2 text-center border-r border-slate-700">Milestone Front Identification</th><th colSpan="4" className="p-2 text-center border-r border-slate-700 bg-blue-950">Review Week #{weekNo} Performance</th><th colSpan="4" className="p-2 text-center bg-slate-950">Forward Planning & Directives</th></tr>
+                      <tr className="bg-slate-100 text-slate-700 text-[8px] uppercase tracking-wider sticky-th-sub"><th className="p-2 w-[16%]">L2 Work Front</th><th className="p-2 w-[10%]">Task</th><th className="p-2 w-[4%] text-center border-r border-slate-300">Unit</th><th className="p-2 w-[6%] text-center text-blue-950">Target Plan</th><th className="p-2 w-[6%] text-center text-emerald-900">Actual Done</th><th className="p-2 w-[5%] text-center">Variance</th><th className="p-2 w-[6%] text-center border-r border-slate-300">Cum. Backlog</th><th className="p-2 w-[6%] text-center">Next Target</th><th className="p-2 w-[13%]">Identified Hindrance</th><th className="p-2 w-[14%]">M/s TPL Remarks</th><th className="p-2 w-[14%]">NTPC Directives</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {tasks.map((t, idx) => {
-                        const variance = (parseFloat(t.wk_act) || 0) - (parseFloat(t.wk_plan) || 0);
+                      {currentTasks.map((t, idx) => {
+                        const variance = (parseFloat(t.act) || 0) - (parseFloat(t.plan) || 0);
+                        const varColor = variance < 0 ? "text-rose-600 bg-rose-50" : variance > 0 ? "text-emerald-700 bg-emerald-50" : "text-slate-400";
+                        const activeL2Options = l2Schedule.filter(x => x.discipline === (activeDiscipline === "Civil_Execution" ? "Civil" : activeDiscipline === "Mech_Execution" ? "Mechanical" : "Electrical"));
+                        const displayBacklog = t.computedBacklog !== undefined ? t.computedBacklog : t.cumBacklog;
                         return (
                           <tr key={idx} className="hover:bg-slate-50">
-                            <td className="p-2"><input type="text" value={t.l2_reference || ""} onChange={e => handleTaskChange(idx, "l2_reference", e.target.value)} className="w-full bg-slate-100 rounded p-1 font-bold text-[10px] outline-none" placeholder="L2..." /></td>
-                            <td className="p-2"><input type="text" value={t.task_name || ""} onChange={e => handleTaskChange(idx, "task_name", e.target.value)} className="w-full bg-transparent border-b p-1 font-bold text-[11px] outline-none" placeholder="Task..." /></td>
-                            <td className="p-2 text-center"><input type="text" value={t.unit || ""} onChange={e => handleTaskChange(idx, "unit", e.target.value)} className="w-12 bg-slate-100 text-center rounded p-1" /></td>
-                            <td className="p-2 text-center"><input type="number" disabled={role === "TPL"} value={t.wk_plan || 0} onChange={e => handleTaskChange(idx, "wk_plan", e.target.value)} className="w-16 bg-blue-50 text-center font-bold text-ntpc-blue rounded p-1 border border-blue-200" /></td>
-                            <td className="p-2 text-center"><input type="number" value={t.wk_act || 0} onChange={e => handleTaskChange(idx, "wk_act", e.target.value)} className="w-16 bg-emerald-50 text-center font-bold text-emerald-800 rounded p-1 border border-emerald-200" /></td>
-                            <td className={`p-2 text-center font-black ${variance < 0 ? "text-rose-600" : "text-emerald-700"}`}>{variance > 0 ? `+${variance}` : variance}</td>
-                            <td className="p-2"><textarea rows="1" value={t.hindrance || ""} onChange={e => handleTaskChange(idx, "hindrance", e.target.value)} className="w-full border p-1 rounded text-[10px]" placeholder="Blockers..."></textarea></td>
-                            <td className="p-2"><textarea rows="1" disabled={role === "NTPC"} value={t.tpl_remarks || ""} onChange={e => handleTaskChange(idx, "tpl_remarks", e.target.value)} className="w-full border p-1 rounded text-[10px]"></textarea></td>
-                            <td className="p-2"><textarea rows="1" disabled={role === "TPL"} value={t.ntpc_directives || ""} onChange={e => handleTaskChange(idx, "ntpc_directives", e.target.value)} className="w-full border p-1 rounded text-[10px] text-rose-900 font-bold"></textarea></td>
+                            <td className="p-1.5"><select disabled={isTplDisabled} value={t.l2Ref || ""} onChange={e => handleRowChange(currentTasks, setCurrentTasks, idx, "l2Ref", e.target.value)} className="w-full bg-slate-100 rounded p-1 outline-none font-bold text-ntpc-blue text-[9.5px]"><option value="">-- Reference L2 --</option>{activeL2Options.map(o => <option key={o.id} value={o.desc}>{o.desc}</option>)}</select></td>
+                            <td className="p-1.5"><input type="text" list={activeDiscipline === "Civil_Execution" ? "preset-tasks" : ""} disabled={isTplDisabled} value={t.taskName || ""} onChange={e => handleRowChange(currentTasks, setCurrentTasks, idx, "taskName", e.target.value)} className="w-full bg-transparent font-bold border-b border-slate-200 outline-none focus:border-ntpc-orange text-[10px]" /></td>
+                            <td className="p-1.5 border-r border-slate-200"><input type="text" disabled={isTplDisabled} value={t.unit || ""} onChange={e => handleRowChange(currentTasks, setCurrentTasks, idx, "unit", e.target.value)} className="w-full bg-slate-100 rounded p-1 outline-none text-center text-[10px]" /></td>
+                            <td className="p-1.5"><input type="number" disabled={role === 'TPL'} value={t.plan} onChange={e => handleTaskMetricChange(idx, "plan", e.target.value)} className="w-full bg-blue-50/60 border border-blue-200 rounded p-1 outline-none text-center font-black text-ntpc-blue text-[10px]" /></td>
+                            <td className="p-1.5"><input type="number" disabled={isTplDisabled} value={t.act} onChange={e => handleTaskMetricChange(idx, "act", e.target.value)} className="w-full bg-emerald-50/60 border border-emerald-200 rounded p-1 outline-none text-center font-black text-emerald-800 text-[10px]" /></td>
+                            <td className={`p-1.5 text-center font-black text-[10px] rounded ${varColor}`}>{variance > 0 ? `+${variance}` : variance}</td>
+                            <td className="p-1.5 border-r border-slate-200"><input type="number" disabled={isTplDisabled} value={displayBacklog} onChange={e => handleRowChange(currentTasks, setCurrentTasks, idx, "cumBacklog", e.target.value)} className="w-full bg-rose-50 border border-rose-200 rounded p-1 outline-none text-center font-black text-rose-700 text-[10px]" /></td>
+                            <td className="p-1.5"><input type="number" disabled={isTplDisabled} value={t.next} onChange={e => handleRowChange(currentTasks, setCurrentTasks, idx, "next", e.target.value)} className="w-full bg-slate-100 rounded p-1 outline-none text-center text-[10px]" /></td>
+                            <td className="p-1.5 bg-amber-50/30"><textarea rows="1" disabled={isTplDisabled} value={t.hindrance || ""} onChange={e => handleRowChange(currentTasks, setCurrentTasks, idx, "hindrance", e.target.value)} className="w-full bg-white border border-slate-200 rounded p-1 text-[9.5px] outline-none"></textarea></td>
+                            <td className="p-1.5 bg-sky-50/20"><textarea rows="1" disabled={role === "NTPC" || isTplDisabled} value={t.tplRemarks || ""} onChange={e => handleRowChange(currentTasks, setCurrentTasks, idx, "tplRemarks", e.target.value)} className="w-full bg-white border border-slate-200 rounded p-1 text-[9.5px] outline-none"></textarea></td>
+                            <td className="p-1.5 bg-rose-50/20"><textarea rows="1" disabled={role === "TPL"} value={t.ntpcDirectives || ""} onChange={e => handleRowChange(currentTasks, setCurrentTasks, idx, "ntpcDirectives", e.target.value)} className="w-full bg-white border border-slate-200 rounded p-1 text-[9.5px] outline-none text-rose-950 font-bold"></textarea></td>
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
                 </div>
-              )}
+              </div>
+            )}
 
-              {tab === "SAFETY" && (
-                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm fade-in space-y-4">
-                  <h3 className="text-xs font-black text-ntpc-blue uppercase tracking-wider">Log Field Safety Violation (Supabase Direct Storage)</h3>
-                  <div className="flex gap-4 items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
-                    <input type="text" id="saf-desc" className="flex-1 border bg-white p-2 rounded-lg text-xs" placeholder="Violation Description..." />
-                    <input type="file" id="saf-file" className="text-xs" />
-                    <button onClick={async () => {
-                      const desc = document.getElementById('saf-desc').value;
-                      const file = document.getElementById('saf-file').files[0];
-                      if (!desc) return alert("Add description");
-                      setLoading(true);
-                      let photoUrl = "";
-                      if (file) photoUrl = await uploadImage(file);
-                      await supabase.from('safety_logs').insert([{ week_no: weekNo, category: "Unsafe Condition", description: desc, photo_url: photoUrl }]);
-                      loadData();
-                    }} className="bg-ntpc-orange text-white text-xs font-black uppercase px-4 py-2 rounded-lg shadow">Post Instant</button>
-                  </div>
+            {/* TAB: DRAWINGS */}
+            {tab === "DRAWINGS" && (
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden fade-in"><div className="p-4 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between"><div><h2 className="text-xs font-black text-ntpc-blue uppercase tracking-wider">Drawings & Document Control Index</h2></div><div className="flex items-center gap-2"><button onClick={() => setDrawings([...drawings, { id: "", discipline: "Civil", drawingNo: "", desc: "", priority: "Moderate", targetDate: "", expectedDate: "", status: "Pending", frontImpact: "", remarks: "" }])} disabled={isTplDisabled} className="bg-ntpc-orange text-white px-3.5 py-1.5 rounded-lg text-xs font-extrabold uppercase disabled:opacity-40">+ Add</button><button onClick={() => saveActiveSheet("Drawings_Status", drawings)} className="bg-ntpc-blue text-white px-4 py-1.5 rounded-lg text-xs font-extrabold uppercase shadow">Save</button></div></div><div className="table-container max-h-[calc(100vh-250px)] overflow-y-auto custom-scroll"><table className="w-full text-left text-xs"><thead><tr className="bg-ntpc-navy text-white text-[9px] uppercase tracking-wider sticky-th"><th className="p-3 w-[8%]">Discipline</th><th className="p-3 w-[12%]">Drawing No.</th><th className="p-3 w-[18%]">Description</th><th className="p-3 w-[8%] text-center">Priority</th><th className="p-3 w-[9%] text-center">Target</th><th className="p-3 w-[9%] text-center">Expected</th><th className="p-3 w-[10%] text-center">Status</th><th className="p-3 w-[13%]">Impact</th><th className="p-3 w-[13%]">Remarks</th></tr></thead><tbody className="divide-y divide-slate-100">{drawings.map((d, idx) => (<tr key={idx} className="hover:bg-slate-50/60"><td className="p-2"><select disabled={isTplDisabled} value={d.discipline || "Civil"} onChange={e => handleRowChange(drawings, setDrawings, idx, "discipline", e.target.value)} className="w-full bg-slate-100 rounded p-1 font-bold text-[10px] outline-none"><option>Civil</option><option>Mechanical</option><option>Electrical</option><option>Architecture</option></select></td><td className="p-2"><input type="text" disabled={isTplDisabled} value={d.drawingNo || ""} onChange={e => handleRowChange(drawings, setDrawings, idx, "drawingNo", e.target.value)} className="w-full bg-slate-100 font-bold p-1 rounded outline-none text-[10.5px]" /></td><td className="p-2"><input type="text" disabled={isTplDisabled} value={d.desc || ""} onChange={e => handleRowChange(drawings, setDrawings, idx, "desc", e.target.value)} className="w-full bg-transparent font-bold border-b border-slate-200 outline-none focus:border-ntpc-orange text-[10.5px]" /></td><td className="p-2"><select disabled={isTplDisabled} value={d.priority || "Moderate"} onChange={e => handleRowChange(drawings, setDrawings, idx, "priority", e.target.value)} className={`w-full rounded p-1 font-black text-[9px] text-center outline-none ${d.priority === 'High' ? 'bg-rose-100 text-rose-700' : d.priority === 'Low' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-700'}`}><option>High</option><option>Moderate</option><option>Low</option></select></td><td className="p-2 text-center"><input type="date" disabled={isTplDisabled} value={d.targetDate || ""} onChange={e => handleRowChange(drawings, setDrawings, idx, "targetDate", e.target.value)} className="bg-slate-100 p-1 rounded text-[9.5px] font-bold outline-none" /></td><td className="p-2 text-center"><input type="date" disabled={isTplDisabled} value={d.expectedDate || ""} onChange={e => handleRowChange(drawings, setDrawings, idx, "expectedDate", e.target.value)} className="bg-slate-100 p-1 rounded text-[9.5px] font-bold text-orange-600 outline-none" /></td><td className="p-2 text-center"><button onClick={() => { if (role !== "NTPC") return; const next = d.status === "Pending" ? "Under Review" : d.status === "Under Review" ? "Cat-1 Approved" : "Pending"; handleRowChange(drawings, setDrawings, idx, "status", next); }} className={`px-2 py-1 rounded text-[9px] font-black uppercase w-full ${d.status === "Cat-1 Approved" ? "bg-emerald-100 text-emerald-800" : d.status === "Under Review" ? "bg-amber-100 text-amber-800" : "bg-rose-100 text-rose-800"}`}>{d.status || "Pending"}</button></td><td className="p-2"><textarea rows="1" disabled={isTplDisabled} value={d.frontImpact || ""} onChange={e => handleRowChange(drawings, setDrawings, idx, "frontImpact", e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded p-1 text-[9.5px] outline-none text-rose-950 font-bold" /></td><td className="p-2"><textarea rows="1" disabled={isTplDisabled} value={d.remarks || ""} onChange={e => handleRowChange(drawings, setDrawings, idx, "remarks", e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded p-1 text-[9.5px] outline-none" /></td></tr>))}</tbody></table></div></div>
+            )}
 
-                  <div className="grid grid-cols-2 gap-4">
-                    {safetyLogs.map((s, i) => (
-                      <div key={i} className="border p-3 rounded-xl bg-slate-50 space-y-2">
-                        <div className="flex justify-between font-bold text-xs"><span className="text-ntpc-blue">{s.category}</span><span className="text-rose-600">{s.status}</span></div>
-                        <p className="text-xs">{s.description}</p>
-                        {s.photo_url && <img src={s.photo_url} className="h-32 w-full object-cover rounded-lg border" />}
-                      </div>
-                    ))}
+            {/* TAB: HSE & QA */}
+            {tab === "HSE & QA" && (
+              <div className="space-y-6 fade-in">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-6">
+                    <div><label className="text-[10px] font-bold uppercase text-slate-400 block">Total Site Manpower</label><input type="number" value={siteStats.manpower} onChange={e=>setSiteStats({...siteStats, manpower: parseInt(e.target.value)||0})} className="font-black text-xl text-ntpc-blue bg-slate-50 border border-slate-200 rounded p-1.5 w-24 outline-none"/></div>
+                    <div><label className="text-[10px] font-bold uppercase text-slate-400 block">Total Persons Trained</label><input type="number" value={siteStats.trained} onChange={e=>setSiteStats({...siteStats, trained: parseInt(e.target.value)||0})} className="font-black text-xl text-emerald-600 bg-slate-50 border border-slate-200 rounded p-1.5 w-24 outline-none"/></div>
+                    <button onClick={saveWeekMeta} className="mt-4 bg-ntpc-blue text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow">Save Stats</button>
                   </div>
+                  <button onClick={() => setShowLogModal(true)} disabled={isTplDisabled} className="bg-ntpc-orange text-white px-4 py-2 rounded-xl text-xs font-black uppercase shadow">+ Log Observation</button>
                 </div>
-              )}
-            </main>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm"><h3 className="text-xs font-black text-orange-600 uppercase tracking-wider mb-3">HSE Safety Violations Log</h3><div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 custom-scroll">{safetyLogs.length === 0 ? <p className="text-xs text-slate-400">No logs.</p> : safetyLogs.map((s, i) => (<div key={i} className="p-3.5 bg-slate-50 rounded-xl border border-slate-200"><div className="flex items-center justify-between"><span className="text-xs font-black text-ntpc-blue">{s.id} (Wk {s.weekNo}) • {s.category}</span><button onClick={() => toggleStatus("Safety_Logs", s.id, s.status)} disabled={role !== "NTPC"} className={`px-2.5 py-0.5 rounded text-[9px] font-black uppercase ${s.status === 'Complied' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{s.status === 'Complied' ? '✓ Complied' : '⚠ Open'}</button></div><p className="text-slate-700 text-xs mt-2 font-medium">{s.desc}</p>{s.photoUrl && (<button onClick={() => fetchAndShowImage(s.photoUrl)} className="text-blue-600 font-bold text-[10px] mt-2 flex items-center gap-1 uppercase">📷 View Photo</button>)}</div>))}</div></div>
+                  <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm"><h3 className="text-xs font-black text-blue-600 uppercase tracking-wider mb-3">Quality Assurance NCRs</h3><div className="space-y-3 max-h-[500px] overflow-y-auto pr-1 custom-scroll">{qualityLogs.length === 0 ? <p className="text-xs text-slate-400">No NCRs.</p> : qualityLogs.map((q, i) => (<div key={i} className="p-3.5 bg-slate-50 rounded-xl border border-slate-200"><div className="flex items-center justify-between"><span className="text-xs font-black text-ntpc-blue">{q.id} (Wk {q.weekNo}) • {q.category}</span><button onClick={() => toggleStatus("Quality_Logs", q.id, q.status)} disabled={role !== "NTPC"} className={`px-2.5 py-0.5 rounded text-[9px] font-black uppercase ${q.status === 'Complied' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>{q.status === 'Complied' ? '✓ Complied' : '⚠ Open'}</button></div><p className="text-slate-700 text-xs mt-2 font-medium">{q.desc}</p>{q.photoUrl && (<button onClick={() => fetchAndShowImage(q.photoUrl)} className="text-blue-600 font-bold text-[10px] mt-2 flex items-center gap-1 uppercase">📷 View Photo</button>)}</div>))}</div></div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB: ACTIONS */}
+            {tab === "ACTIONS" && (
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden fade-in"><div className="p-4 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between"><div><h2 className="text-xs font-black text-ntpc-blue uppercase tracking-wider">Action Tracker</h2></div><div className="flex items-center gap-2"><button onClick={() => setActions([...actions, { id: "", category: "Execution", desc: "", responsibility: "TPL", targetDate: "", revisedDate: "", status: "Pending", ntpcRemarks: "" }])} disabled={isTplDisabled} className="bg-ntpc-orange text-white px-3.5 py-1.5 rounded-lg text-xs font-extrabold uppercase disabled:opacity-40">+ Add Point</button><button onClick={() => saveActiveSheet("Action_Tracker", actions)} className="bg-ntpc-blue text-white px-4 py-1.5 rounded-lg text-xs font-extrabold uppercase shadow">Save Tracker</button></div></div><div className="table-container max-h-[calc(100vh-250px)] overflow-y-auto custom-scroll"><table className="w-full text-left text-xs"><thead><tr className="bg-ntpc-navy text-white text-[9px] uppercase tracking-wider sticky-th"><th className="p-3 w-[10%]">Category</th><th className="p-3 w-[26%]">Description</th><th className="p-3 w-[10%]">Resp.</th><th className="p-3 w-[10%] text-center">Target Date</th><th className="p-3 w-[10%] text-center">Revised Target</th><th className="p-3 w-[10%] text-center">Status</th><th className="p-3 w-[24%]">NTPC Remarks</th></tr></thead><tbody className="divide-y divide-slate-100">{actions.map((a, idx) => (<tr key={idx} className="hover:bg-slate-50/60"><td className="p-2"><select disabled={isTplDisabled} value={a.category || "Execution"} onChange={e => handleRowChange(actions, setActions, idx, "category", e.target.value)} className="w-full bg-slate-100 rounded p-1 font-bold text-[10px] outline-none"><option>Execution</option><option>Engineering</option><option>Procurement</option><option>Clearance</option></select></td><td className="p-2"><span className="text-[8px] font-black text-rose-500 uppercase block">{a.weekNo && a.weekNo != weekNo ? `Carried from Wk ${a.weekNo}` : ''}</span><input type="text" disabled={isTplDisabled} value={a.desc || ""} onChange={e => handleRowChange(actions, setActions, idx, "desc", e.target.value)} className="w-full bg-transparent font-bold border-b border-slate-200 outline-none text-[11px]" /></td><td className="p-2"><input type="text" disabled={isTplDisabled} value={a.responsibility || ""} onChange={e => handleRowChange(actions, setActions, idx, "responsibility", e.target.value)} className="w-full bg-slate-100 font-bold p-1 rounded text-[10px] outline-none" /></td><td className="p-2 text-center"><input type="date" disabled={isTplDisabled} value={a.targetDate || ""} onChange={e => handleRowChange(actions, setActions, idx, "targetDate", e.target.value)} className="bg-slate-100 p-1 rounded text-[9.5px] font-bold outline-none" /></td><td className="p-2 text-center"><input type="date" disabled={role === "TPL"} value={a.revisedDate || ""} onChange={e => handleRowChange(actions, setActions, idx, "revisedDate", e.target.value)} className="bg-amber-50 text-amber-800 p-1 rounded text-[9.5px] font-bold outline-none" /></td><td className="p-2 text-center"><button onClick={() => { if (role !== "NTPC") return; const ns = a.status === "Pending" ? "In Progress" : a.status === "In Progress" ? "Completed" : "Pending"; handleRowChange(actions, setActions, idx, "status", ns); }} className={`px-2 py-1 rounded text-[9px] font-black uppercase w-full ${a.status === "Completed" ? "bg-emerald-100 text-emerald-800" : a.status === "In Progress" ? "bg-amber-100 text-amber-800" : "bg-rose-100 text-rose-800"}`}>{a.status || "Pending"}</button></td><td className="p-2"><textarea rows="1" disabled={role === "TPL"} value={a.ntpcRemarks || ""} onChange={e => handleRowChange(actions, setActions, idx, "ntpcRemarks", e.target.value)} className="w-full bg-rose-50/20 border border-slate-200 rounded p-1 text-[9.5px] outline-none text-rose-950 font-bold" /></td></tr>))}</tbody></table></div></div>
+            )}
+          </main>
+
+          {/* LIGHTBOX MODAL */}
+          {viewImageId && (<div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 fade-in"><div className="bg-white rounded-3xl p-6 max-w-2xl w-full shadow-2xl relative flex flex-col items-center"><button onClick={() => setViewImageId(null)} className="absolute top-5 right-5 text-slate-400 font-black text-xl">✕</button><span className="text-[10px] font-black uppercase tracking-widest text-ntpc-blue mb-4">Observation Media</span><div className="w-full min-h-[300px] max-h-[65vh] flex items-center justify-center bg-slate-100 rounded-2xl overflow-hidden border border-slate-200">{imageLoading ? (<div className="flex flex-col items-center gap-2"><div className="w-8 h-8 border-3 border-orange-500 border-t-transparent rounded-full animate-spin"></div></div>) : viewImageData ? (<img src={viewImageData} className="max-w-full max-h-[60vh] object-contain rounded-xl" alt="Observation" />) : (<p className="text-xs font-bold text-rose-600">Failed to load securely.</p>)}</div><div className="mt-6 flex justify-end w-full"><a href={`https://drive.google.com/file/d/${viewImageId}/view`} target="_blank" className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider hover:underline">Open Drive Tab →</a></div></div></div>)}
+
+          {/* LOG UPLOAD MODAL */}
+          {showLogModal && (<div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 fade-in"><div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-100"><h3 className="text-xs font-black text-ntpc-blue uppercase tracking-widest mb-4 border-b border-slate-100 pb-3">Log Site Observation</h3><div className="space-y-3.5"><div><label className="text-[9px] font-black uppercase text-slate-400 block mb-1">Type</label><select value={logForm.type} onChange={e => setLogForm({ ...logForm, type: e.target.value, category: e.target.value === "Safety" ? "Unsafe Condition" : "Civil NCR" })} className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold outline-none"><option value="Safety">Safety Lapse</option><option value="Quality">Quality NCR</option></select></div><div><label className="text-[9px] font-black uppercase text-slate-400 block mb-1">Category</label>{logForm.type === 'Safety' ? (<select value={logForm.category} onChange={e => setLogForm({ ...logForm, category: e.target.value })} className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold outline-none"><option>Unsafe Condition</option><option>Unsafe Act</option><option>Near Miss</option></select>) : (<input type="text" value={logForm.category} onChange={e => setLogForm({ ...logForm, category: e.target.value })} className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold outline-none" />)}</div><div><label className="text-[9px] font-black uppercase text-slate-400 block mb-1">Description</label><textarea rows="3" value={logForm.desc} onChange={e => setLogForm({ ...logForm, desc: e.target.value })} className="w-full bg-slate-50 border border-slate-200 p-2.5 rounded-xl text-xs font-bold outline-none"></textarea></div><div className="bg-slate-50 border-2 border-dashed border-slate-300 p-3.5 rounded-xl text-center"><label className="text-[9px] font-black uppercase text-slate-400 block mb-2">Upload Photo Evidence</label><input type="file" accept="image/*" onChange={e => setLogForm({ ...logForm, file: e.target.files[0] })} className="w-full text-[9px] font-bold file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-ntpc-blue file:text-white" /></div></div><div className="flex gap-3 mt-6"><button onClick={() => setShowLogModal(false)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all">Cancel</button><button onClick={submitLog} className="flex-1 bg-ntpc-orange hover:bg-orange-600 text-white py-2.5 rounded-xl text-xs font-black uppercase tracking-wider shadow transition-all">Submit Log</button></div></div></div>)}
+
+          {/* INITIALIZE WEEK MODAL */}
+          {showWeekModal && (<div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4 fade-in"><div className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl border border-slate-100"><h3 className="text-xs font-black text-ntpc-blue uppercase tracking-widest mb-3">Initialize Next Review Cycle</h3><p className="text-[10px] text-slate-500 font-bold mb-4">Pending goals & active drawings will carry forward automatically.</p><div><label className="text-[9px] font-black uppercase text-slate-400 block mb-1">New Review Sequence Number</label><input type="number" value={newWeekInput} onChange={e => setNewWeekInput(e.target.value)} className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl text-sm font-black outline-none" /></div><div className="flex gap-3 mt-6"><button onClick={() => setShowWeekModal(false)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all">Cancel</button><button onClick={async () => { setLoading(true); const nx = parseInt(newWeekInput); await apiPost({ action: "CREATE_WEEK", newWeekNo: nx }); setShowWeekModal(false); setWeekNo(nx); loadData(nx); }} className="flex-1 bg-ntpc-blue hover:bg-slate-900 text-white py-2.5 rounded-xl text-xs font-black uppercase tracking-wider shadow transition-all">Create & Sync</button></div></div></div>)}
+
+          {/* ========================================================= */}
+          {/* EXACT IMAGE REPLICA PRINT MOM FORMAT */}
+          {/* ========================================================= */}
+          <div id="printable-mom" className="hidden print:block font-serif bg-white text-black">
+            
+            {/* Header matches image_ec6bc2.png perfectly */}
+            <div className="print-header-container">
+              <img src="https://upload.wikimedia.org/wikipedia/commons/e/e0/NTPC_Logo.svg" alt="NTPC Logo" className="print-logo" />
+              <div className="text-right">
+                <h1 className="print-title">Nabinagar Super Thermal Power Project</h1>
+                <div className="header-gradient-line"></div>
+                <div className="print-subtitle">1980 MW (Stage-I:3X660) & 2400 MW (Stage-II:3X800) under construction</div>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-end mb-4 border-b border-black pb-1">
+              <h2 className="text-xs font-bold uppercase tracking-wider">Minutes of Weekly Review Meeting (WRM) — Week #{weekNo}</h2>
+              <div className="text-[8px] font-bold text-right uppercase">REF: NTPC/NSTPP-II/WRM/{weekNo}<br />Date: {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+            </div>
+
+            <h3 className="text-[9px] font-bold uppercase mb-1">1. Meeting Participants & Site Statistics</h3>
+            <table className="mb-4">
+              <thead><tr><th className="w-[35%]">Employer (NTPC)</th><th className="w-[35%]">Contractor (M/s TPL)</th><th className="w-[30%] text-center">Site Operational Data</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td className="align-top"><ul className="list-disc pl-4 m-0">{attendees.ntpc.filter(a => a.name).map((a, i) => <li key={i}><strong>{a.name}</strong> — {a.desig}</li>)}</ul></td>
+                  <td className="align-top"><ul className="list-disc pl-4 m-0">{attendees.tpl.filter(a => a.name).map((a, i) => <li key={i}><strong>{a.name}</strong> — {a.desig}</li>)}</ul></td>
+                  <td className="align-top font-bold text-center bg-[#f1f5f9]">Total Deployed Manpower: <span className="text-base">{siteStats.manpower}</span><br/><br/>Total Trained Personnel: <span className="text-base">{siteStats.trained}</span></td>
+                </tr>
+              </tbody>
+            </table>
+
+            <h3 className="text-[9px] font-bold uppercase mb-1">2. Execution Performance vs Plan</h3>
+            <table className="mb-4">
+              <thead><tr><th className="w-1/4">Work Front & L2 Reference</th><th className="text-center">Plan</th><th className="text-center">Actual</th><th className="text-center">Var.</th><th className="text-center">Cum. BL</th><th className="w-1/6">Hindrance</th><th className="w-1/5">TPL Remarks</th><th className="w-1/5">NTPC Directives</th></tr></thead>
+              <tbody>
+                {[...civilTasks, ...mechTasks, ...elecTasks].map((c, i) => (
+                  <tr key={i}>
+                    <td><strong>{c.l2Ref}</strong><br/>{c.taskName} ({c.unit})</td>
+                    <td className="text-center font-bold text-blue-900">{c.plan}</td>
+                    <td className="text-center font-bold text-emerald-800">{c.act}</td>
+                    <td className="text-center font-black">{(parseFloat(c.act) || 0) - (parseFloat(c.plan) || 0)}</td>
+                    <td className="text-center font-bold text-rose-800">{c.cumBacklog}</td>
+                    <td>{c.hindrance}</td><td>{c.tplRemarks}</td><td className="font-bold">{c.ntpcDirectives}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <h3 className="text-[9px] font-bold uppercase mb-1">3. Priority Actions & Bottlenecks</h3>
+            <table className="mb-6">
+              <thead><tr><th className="w-[30%]">Action Point Description</th><th className="w-[10%]">Resp.</th><th className="text-center w-[12%]">Target</th><th className="text-center w-[12%]">Status</th><th className="w-[36%]">NTPC Review Comments</th></tr></thead>
+              <tbody>
+                {actions.map((a, i) => (
+                  <tr key={i}>
+                    <td><strong>{a.desc}</strong></td><td>{a.responsibility}</td>
+                    <td className="text-center font-bold">{a.revisedDate || a.targetDate}</td><td className="text-center uppercase font-bold">{a.status}</td>
+                    <td>{a.ntpcRemarks}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="mt-16 flex justify-between text-[9px] font-bold uppercase px-12">
+              <div className="text-center">__________________________<br/><br/>Employer Representative<br/>(NTPC)</div>
+              <div className="text-center">__________________________<br/><br/>Contractor Representative<br/>(M/s TPL)</div>
+            </div>
           </div>
         </div>
       );
     }
-
     ReactDOM.createRoot(document.getElementById("root")).render(<App />);
   </script>
 </body>
